@@ -80,20 +80,6 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
   }
   const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
 
-  // Scene-level fade: ramps the whole group 0→1 at the start of the cycle and
-  // 1→0 at the end. Wrapping everything in one <g opacity="…"> applies it once.
-  const cycle = cycleDuration(state)
-  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
-  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
-  let sceneAlpha = 1
-  if (sf > 0) {
-    if (scenePhase < sf) sceneAlpha = scenePhase / sf
-    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
-  }
-  const sceneGroup = document.createElementNS(SVG_NS, 'g')
-  sceneGroup.setAttribute('opacity', String(sceneAlpha))
-  svg.appendChild(sceneGroup)
-
   // Base guide paths (static) — rendered first so trails draw on top.
   if (state.showBase) {
     for (const d of state.paths) {
@@ -106,13 +92,15 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         linecap: state.linecap,
       })
       if (filterAttr) p.setAttribute('filter', filterAttr)
-      sceneGroup.appendChild(p)
+      svg.appendChild(p)
     }
   }
 
   // Trail paths: each trail sweeps a segment along the path via stroke-dasharray.
   // Using pathLength="1" normalises the path's total length to 1 so the dash
   // arithmetic is just fractions — independent of the actual path geometry.
+  // Trails always use butt caps: rounded caps create pill-shaped artefacts
+  // where the visible trim window is short.
   for (let i = 0; i < state.trailCount; i++) {
     const { head, tail, opacity, active } = trailPositions(state, i, absTimeSec)
     if (!active) continue
@@ -129,14 +117,14 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         color,
         strokeWidth: state.strokeWidth,
         opacity,
-        linecap: state.linecap,
+        linecap: 'butt',
       })
       trail.setAttribute(
         'stroke-dasharray',
         `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
       )
       if (filterAttr) trail.setAttribute('filter', filterAttr)
-      sceneGroup.appendChild(trail)
+      svg.appendChild(trail)
     }
   }
 }
@@ -168,19 +156,7 @@ export function renderBurstAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
   }
   const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
 
-  // Scene fade group wraps everything so the whole set dips at cycle edges.
   const cycle = cycleDuration(state)
-  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
-  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
-  let sceneAlpha = 1
-  if (sf > 0) {
-    if (scenePhase < sf) sceneAlpha = scenePhase / sf
-    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
-  }
-  const sceneGroup = document.createElementNS(SVG_NS, 'g')
-  sceneGroup.setAttribute('opacity', String(sceneAlpha))
-  svg.appendChild(sceneGroup)
-
   const easeFn = EASINGS[state.easing]
   const bp = state.burst
   const bursts = generateBursts(bp, state.canvasSize, cycle)
@@ -221,18 +197,20 @@ export function renderBurstAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         `M ${x1.toFixed(3)} ${y1.toFixed(3)} L ${x2.toFixed(3)} ${y2.toFixed(3)}`,
       )
       line.setAttribute('pathLength', '1')
+      // Burst rays use butt caps — rounded caps on short trim segments
+      // look like coloured pills/dots mid-sweep.
       applyStrokeAttrs(line, {
         color,
         strokeWidth: state.strokeWidth,
         opacity,
-        linecap: state.linecap,
+        linecap: 'butt',
       })
       line.setAttribute(
         'stroke-dasharray',
         `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
       )
       if (filterAttr) line.setAttribute('filter', filterAttr)
-      sceneGroup.appendChild(line)
+      svg.appendChild(line)
     }
 
     if (bp.centerDot && bp.centerDotRadius > 0) {
@@ -243,7 +221,7 @@ export function renderBurstAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       dot.setAttribute('fill', color)
       dot.setAttribute('opacity', String(opacity))
       if (filterAttr) dot.setAttribute('filter', filterAttr)
-      sceneGroup.appendChild(dot)
+      svg.appendChild(dot)
     }
   }
 }
@@ -274,18 +252,6 @@ export function renderAsteriskAnim(svg: SVGSVGElement, state: TrailAnimState, ab
   }
   const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
 
-  const cycle = cycleDuration(state)
-  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
-  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
-  let sceneAlpha = 1
-  if (sf > 0) {
-    if (scenePhase < sf) sceneAlpha = scenePhase / sf
-    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
-  }
-  const sceneGroup = document.createElementNS(SVG_NS, 'g')
-  sceneGroup.setAttribute('opacity', String(sceneAlpha))
-  svg.appendChild(sceneGroup)
-
   const easeFn = EASINGS[state.easing]
   const ap = state.asterisk
   const rays = generateAsteriskRays(ap, state.canvasSize)
@@ -293,52 +259,59 @@ export function renderAsteriskAnim(svg: SVGSVGElement, state: TrailAnimState, ab
   const cy = state.canvasSize / 2
   const fade = Math.max(0, Math.min(0.49, state.trailFade))
 
+  // For each ray, run the full trail animation: N trails (one per trail color)
+  // staggered by state.stagger, each sweeping the ray over state.duration.
+  // Consecutive rays can be offset by ap.rayOffset for a spinning reveal.
   for (let j = 0; j < rays.length; j++) {
     const ray = rays[j]
-    const startOffset = j * ap.rayStagger
-    const localT = absTimeSec - startOffset
-    if (localT < 0 || localT > ap.rayDuration) continue
-
-    const phase = localT / ap.rayDuration
-    const tip = easeFn(phase) * (1 + ap.trailLength)
-    const head = Math.min(1, tip)
-    const tail = Math.max(0, Math.min(1, tip - ap.trailLength))
-    const visibleLen = head - tail
-    if (visibleLen <= 0.001) continue
-
-    let opacity = 1
-    if (fade > 0) {
-      if (phase < fade) opacity = phase / fade
-      else if (phase > 1 - fade) opacity = (1 - phase) / fade
-    }
-    if (opacity <= 0.001) continue
-
-    const color = state.trailColors[j % state.trailColors.length]
     const ca = Math.cos(ray.angle)
     const sa = Math.sin(ray.angle)
     const x1 = cx + ca * ap.innerGap * ray.length
     const y1 = cy + sa * ap.innerGap * ray.length
     const x2 = cx + ca * ray.length
     const y2 = cy + sa * ray.length
+    const pathD = `M ${x1.toFixed(3)} ${y1.toFixed(3)} L ${x2.toFixed(3)} ${y2.toFixed(3)}`
 
-    const line = document.createElementNS(SVG_NS, 'path')
-    line.setAttribute(
-      'd',
-      `M ${x1.toFixed(3)} ${y1.toFixed(3)} L ${x2.toFixed(3)} ${y2.toFixed(3)}`,
-    )
-    line.setAttribute('pathLength', '1')
-    applyStrokeAttrs(line, {
-      color,
-      strokeWidth: state.strokeWidth,
-      opacity,
-      linecap: state.linecap,
-    })
-    line.setAttribute(
-      'stroke-dasharray',
-      `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
-    )
-    if (filterAttr) line.setAttribute('filter', filterAttr)
-    sceneGroup.appendChild(line)
+    for (let k = 0; k < state.trailCount; k++) {
+      const startOffset = j * ap.rayOffset + k * state.stagger
+      const localT = absTimeSec - startOffset
+      if (localT < 0 || localT > state.duration) continue
+
+      const phase = localT / state.duration
+      const tip = easeFn(phase) * (1 + state.trailLength)
+      const head = Math.min(1, tip)
+      const tail = Math.max(0, Math.min(1, tip - state.trailLength))
+      const visibleLen = head - tail
+      if (visibleLen <= 0.001) continue
+
+      let opacity = 1
+      if (fade > 0) {
+        if (phase < fade) opacity = phase / fade
+        else if (phase > 1 - fade) opacity = (1 - phase) / fade
+      }
+      if (opacity <= 0.001) continue
+
+      const color = state.trailColors[k % state.trailColors.length]
+
+      const line = document.createElementNS(SVG_NS, 'path')
+      line.setAttribute('d', pathD)
+      line.setAttribute('pathLength', '1')
+      // Force butt caps on trim segments: rounded caps create pill-shaped
+      // artefacts where the visible window is short. Base can still use
+      // round elsewhere; asterisk is pure-line so butt always looks right.
+      applyStrokeAttrs(line, {
+        color,
+        strokeWidth: state.strokeWidth,
+        opacity,
+        linecap: 'butt',
+      })
+      line.setAttribute(
+        'stroke-dasharray',
+        `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
+      )
+      if (filterAttr) line.setAttribute('filter', filterAttr)
+      svg.appendChild(line)
+    }
   }
 
   if (ap.centerDot && ap.centerDotRadius > 0) {
@@ -348,7 +321,7 @@ export function renderAsteriskAnim(svg: SVGSVGElement, state: TrailAnimState, ab
     dot.setAttribute('r', String(ap.centerDotRadius))
     dot.setAttribute('fill', state.baseColor)
     if (filterAttr) dot.setAttribute('filter', filterAttr)
-    sceneGroup.appendChild(dot)
+    svg.appendChild(dot)
   }
 }
 

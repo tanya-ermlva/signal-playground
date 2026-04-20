@@ -32,19 +32,18 @@ export interface ScribbleParams {
 }
 
 // One configurable asterisk: N rays radiating from a single center. Each ray
-// gets its own staggered trim-path sweep. Like the Burst mode but focused
-// on a single shape with fine per-ray timing control.
+// runs the FULL trail animation (all trail colors sweeping through it,
+// staggered by the global trailStagger). Consecutive rays can additionally
+// be offset in time via rayOffset for a spinning-reveal feel.
 export interface AsteriskParams {
   rays: number            // 3..24 — number of radiating lines
   evenAngles: boolean     // true = evenly spaced, false = random-jittered
   armLength: number       // 0.1..0.95 — base ray length as fraction of canvas half
   armVariance: number     // 0..1 — how much ray lengths vary
   innerGap: number        // 0..0.5 — inner gap (0 = rays touch centre)
-  rayDuration: number     // 0.2..2s — life of each individual ray
-  rayStagger: number      // 0..0.3s — delay between consecutive ray starts
-  trailLength: number     // 0.1..1 — trim-path window on each ray
+  rayOffset: number       // 0..0.5s — delay between consecutive rays' animation starts
   rotation: number        // 0..2π — static rotation of the whole asterisk
-  animateRotation: boolean // if true, rotates over the cycle
+  animateRotation: boolean
   centerDot: boolean
   centerDotRadius: number // px
   seed: number            // only matters when evenAngles is false
@@ -121,7 +120,6 @@ export interface TrailAnimState {
   trailColors: string[]      // length 6
   trailLength: number        // 0.05..0.6 — fraction of path length
   trailFade: number          // 0..0.4 — fraction of each trail's life used for fade in/out
-  sceneFade: number          // 0..0.4 — fraction of cycleDuration used to fade the whole scene
   stagger: number            // 0..1 — seconds between trail starts
   duration: number           // seconds for a single trail to sweep 0→1
   easing: EasingName
@@ -171,9 +169,7 @@ export function createDefaultState(): TrailAnimState {
       armLength: 0.8,
       armVariance: 0.2,
       innerGap: 0,
-      rayDuration: 0.9,
-      rayStagger: 0.08,
-      trailLength: 0.8,
+      rayOffset: 0.06,
       rotation: 0,
       animateRotation: false,
       centerDot: false,
@@ -216,7 +212,6 @@ export function createDefaultState(): TrailAnimState {
     ],
     trailLength: 0.35,
     trailFade: 0.15,
-    sceneFade: 0.1,
     stagger: 0.35,
     duration: 1.8,
     easing: 'easeInOutCubic',
@@ -226,11 +221,12 @@ export function createDefaultState(): TrailAnimState {
   }
 }
 
-// One full animation period. Source-specific when the mode has its own timing.
+// One full animation period. For asterisk, the last ray's last trail finishes
+// at (rays-1)·rayOffset + (trailCount-1)·stagger + duration.
 export function cycleDuration(state: TrailAnimState): number {
   if (state.source === 'asterisk') {
-    const { rays, rayStagger, rayDuration } = state.asterisk
-    return Math.max(rayDuration, (rays - 1) * rayStagger + rayDuration)
+    const rayTail = (state.asterisk.rays - 1) * state.asterisk.rayOffset
+    return rayTail + (state.trailCount - 1) * state.stagger + state.duration
   }
   return (state.trailCount - 1) * state.stagger + state.duration
 }

@@ -391,32 +391,17 @@ export function ControlsPanel({
               format={(v) => (v === 0 ? 'touch center' : `${Math.round(v * 100)}%`)}
             />
             <SliderRow
-              label="Ray duration"
-              value={state.asterisk.rayDuration}
-              min={0.2}
-              max={2}
-              step={0.05}
-              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rayDuration: v } }))}
-              format={(v) => `${v.toFixed(2)}s`}
-            />
-            <SliderRow
-              label="Ray stagger"
-              value={state.asterisk.rayStagger}
+              label="Ray offset"
+              value={state.asterisk.rayOffset}
               min={0}
-              max={0.3}
+              max={0.5}
               step={0.01}
-              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rayStagger: v } }))}
-              format={(v) => `${v.toFixed(2)}s`}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rayOffset: v } }))}
+              format={(v) => (v === 0 ? 'all in sync' : `${v.toFixed(2)}s`)}
             />
-            <SliderRow
-              label="Trail length"
-              value={state.asterisk.trailLength}
-              min={0.1}
-              max={1}
-              step={0.05}
-              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, trailLength: v } }))}
-              format={(v) => `${Math.round(v * 100)}%`}
-            />
+            <div className="text-[10px] text-neutral-400 -mt-2">
+              Each ray runs the full trail animation (all trail colors, staggered by the global Stagger slider). Ray offset delays each consecutive ray.
+            </div>
             <SliderRow
               label="Rotation"
               value={state.asterisk.rotation}
@@ -631,15 +616,6 @@ export function ControlsPanel({
           max={0.45}
           step={0.01}
           onChange={(v) => update('trailFade', v)}
-          format={(v) => `${Math.round(v * 100)}%`}
-        />
-        <SliderRow
-          label="Scene fade in/out"
-          value={state.sceneFade}
-          min={0}
-          max={0.45}
-          step={0.01}
-          onChange={(v) => update('sceneFade', v)}
           format={(v) => `${Math.round(v * 100)}%`}
         />
         <SliderRow
