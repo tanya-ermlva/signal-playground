@@ -115,13 +115,31 @@ export function ControlsPanel({
           format={(v) => `${Math.round(v * 100)}% of path`}
         />
         <SliderRow
-          label="Trail width"
-          value={state.trailStrokeWidth}
+          label="Trail fade in/out"
+          value={state.trailFade}
+          min={0}
+          max={0.45}
+          step={0.01}
+          onChange={(v) => update('trailFade', v)}
+          format={(v) => `${Math.round(v * 100)}%`}
+        />
+        <SliderRow
+          label="Stroke width"
+          value={state.strokeWidth}
           min={1}
-          max={24}
+          max={32}
           step={0.5}
-          onChange={(v) => update('trailStrokeWidth', v)}
+          onChange={(v) => update('strokeWidth', v)}
           format={(v) => `${v}px`}
+        />
+        <SliderRow
+          label="Blur"
+          value={state.blur}
+          min={0}
+          max={16}
+          step={0.5}
+          onChange={(v) => update('blur', v)}
+          format={(v) => (v === 0 ? 'off' : `${v}px`)}
         />
         <SliderRow
           label="Duration"
@@ -199,15 +217,6 @@ export function ControlsPanel({
                 onColorChange={(hex) => update('baseColor', hex)}
               />
             </Row>
-            <SliderRow
-              label="Base width"
-              value={state.baseStrokeWidth}
-              min={1}
-              max={24}
-              step={0.5}
-              onChange={(v) => update('baseStrokeWidth', v)}
-              format={(v) => `${v}px`}
-            />
             <SliderRow
               label="Base opacity"
               value={state.baseOpacity}

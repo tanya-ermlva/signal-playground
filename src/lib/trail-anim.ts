@@ -20,12 +20,12 @@ function trailPositions(
   state: TrailAnimState,
   i: number,
   absTimeSec: number,
-): { head: number; tail: number; active: boolean } {
+): { head: number; tail: number; opacity: number; active: boolean } {
   const easeFn = EASINGS[state.easing]
   const start = i * state.stagger
   const localT = absTimeSec - start
   if (localT < 0 || localT > state.duration) {
-    return { head: 0, tail: 0, active: false }
+    return { head: 0, tail: 0, opacity: 0, active: false }
   }
   // The trail's "tip" travels from 0 to (1 + trailLength) across the duration.
   // Head saturates at 1 once the tip reaches the end; tail keeps climbing
@@ -34,7 +34,16 @@ function trailPositions(
   const tip = easeFn(phase) * (1 + state.trailLength)
   const head = Math.min(1, tip)
   const tail = Math.max(0, Math.min(1, tip - state.trailLength))
-  return { head, tail, active: true }
+
+  // Fade-in at the start, fade-out at the end, symmetric. `trailFade` is the
+  // fraction of the trail's life used for each ramp.
+  const fade = Math.max(0, Math.min(0.49, state.trailFade))
+  let opacity = 1
+  if (fade > 0) {
+    if (phase < fade) opacity = phase / fade
+    else if (phase > 1 - fade) opacity = (1 - phase) / fade
+  }
+  return { head, tail, opacity, active: true }
 }
 
 function applyStrokeAttrs(
@@ -52,6 +61,25 @@ function applyStrokeAttrs(
 export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
   while (svg.firstChild) svg.removeChild(svg.firstChild)
 
+  // Gaussian blur filter, applied to every path when blur > 0.
+  const filterId = 'trail-blur'
+  if (state.blur > 0) {
+    const defs = document.createElementNS(SVG_NS, 'defs')
+    const filter = document.createElementNS(SVG_NS, 'filter')
+    filter.setAttribute('id', filterId)
+    filter.setAttribute('x', '-50%')
+    filter.setAttribute('y', '-50%')
+    filter.setAttribute('width', '200%')
+    filter.setAttribute('height', '200%')
+    const gaussian = document.createElementNS(SVG_NS, 'feGaussianBlur')
+    gaussian.setAttribute('in', 'SourceGraphic')
+    gaussian.setAttribute('stdDeviation', String(state.blur))
+    filter.appendChild(gaussian)
+    defs.appendChild(filter)
+    svg.appendChild(defs)
+  }
+  const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
+
   // Base guide paths (static) — rendered first so trails draw on top.
   if (state.showBase) {
     for (const d of state.paths) {
@@ -59,10 +87,11 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       p.setAttribute('d', d)
       applyStrokeAttrs(p, {
         color: state.baseColor,
-        strokeWidth: state.baseStrokeWidth,
+        strokeWidth: state.strokeWidth,
         opacity: state.baseOpacity,
         linecap: 'round',
       })
+      if (filterAttr) p.setAttribute('filter', filterAttr)
       svg.appendChild(p)
     }
   }
@@ -71,10 +100,11 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
   // Using pathLength="1" normalises the path's total length to 1 so the dash
   // arithmetic is just fractions — independent of the actual path geometry.
   for (let i = 0; i < state.trailCount; i++) {
-    const { head, tail, active } = trailPositions(state, i, absTimeSec)
+    const { head, tail, opacity, active } = trailPositions(state, i, absTimeSec)
     if (!active) continue
     const visibleLen = head - tail
     if (visibleLen <= 0.001) continue
+    if (opacity <= 0.001) continue
     const color = state.trailColors[i % state.trailColors.length]
 
     for (const d of state.paths) {
@@ -85,14 +115,15 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       // keeps its round caps so actual path endpoints still look finished.
       applyStrokeAttrs(trail, {
         color,
-        strokeWidth: state.trailStrokeWidth,
-        opacity: 1,
+        strokeWidth: state.strokeWidth,
+        opacity,
         linecap: 'butt',
       })
       trail.setAttribute(
         'stroke-dasharray',
         `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
       )
+      if (filterAttr) trail.setAttribute('filter', filterAttr)
       svg.appendChild(trail)
     }
   }
@@ -344,12 +375,11 @@ export function buildTrailLottie(state: TrailAnimState) {
     paths,
     showBase,
     baseColor,
-    baseStrokeWidth,
+    strokeWidth,
     baseOpacity,
     trailCount,
     trailColors,
     trailLength,
-    trailStrokeWidth,
     stagger,
     duration,
     easing,
@@ -380,7 +410,7 @@ export function buildTrailLottie(state: TrailAnimState) {
         makeBaseLayer({
           vertices: verts,
           color: baseColor,
-          strokeWidth: baseStrokeWidth,
+          strokeWidth: strokeWidth,
           opacity: baseOpacity,
           totalFrames,
           layerIndex: layerIndex++,
@@ -405,7 +435,7 @@ export function buildTrailLottie(state: TrailAnimState) {
         makeTrailLayer({
           vertices: verts,
           color,
-          strokeWidth: trailStrokeWidth,
+          strokeWidth: strokeWidth,
           totalFrames,
           startFrame,
           endFrame,

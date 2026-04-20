@@ -15,17 +15,21 @@ export interface TrailAnimState {
   canvasSize: number
   bgColor: string
 
+  // Stroke width shared by base and all trails (keeps them visually consistent).
+  strokeWidth: number
+  // Gaussian blur applied to base + trails (pixels, stdDeviation).
+  blur: number
+
   // Base guide path (the static outline shown under the trails)
   showBase: boolean
   baseColor: string
-  baseStrokeWidth: number
   baseOpacity: number        // 0..1
 
   // Trails (the animated sweeping strokes)
   trailCount: number         // 1..6
   trailColors: string[]      // length 6
   trailLength: number        // 0.05..0.6 — fraction of path length
-  trailStrokeWidth: number
+  trailFade: number          // 0..0.4 — fraction of each trail's life used for fade in/out
   stagger: number            // 0..1 — seconds between trail starts
   duration: number           // seconds for a single trail to sweep 0→1
   easing: EasingName
@@ -43,9 +47,10 @@ export function createDefaultState(): TrailAnimState {
     paths: [DEFAULT_PATH],
     canvasSize: 256,
     bgColor: '#FFFFFF',
+    strokeWidth: 8,
+    blur: 0,
     showBase: true,
     baseColor: '#1E1E1E',
-    baseStrokeWidth: 8,
     baseOpacity: 1,
     trailCount: 4,
     trailColors: [
@@ -57,7 +62,7 @@ export function createDefaultState(): TrailAnimState {
       '#564391', // purple
     ],
     trailLength: 0.35,
-    trailStrokeWidth: 8,
+    trailFade: 0.15,
     stagger: 0.35,
     duration: 1.8,
     easing: 'easeInOutCubic',
@@ -162,10 +167,10 @@ export function parseSvg(text: string): ParsedSvg | null {
   return { viewBox: vb, paths }
 }
 
-// Effective viewBox for rendering — adds half-stroke padding on every side so
-// stroked content doesn't get clipped by the viewport edge.
+// Effective viewBox for rendering — pads for stroke half-width plus any blur
+// spread (Gaussian blur reaches ~3σ past its nominal edge).
 export function effectiveViewBox(state: TrailAnimState) {
-  const pad = Math.max(state.baseStrokeWidth, state.trailStrokeWidth) / 2
+  const pad = state.strokeWidth / 2 + state.blur * 3
   return {
     x: state.viewBox.x - pad,
     y: state.viewBox.y - pad,
