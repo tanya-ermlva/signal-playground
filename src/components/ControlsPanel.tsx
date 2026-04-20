@@ -34,7 +34,6 @@ interface Props {
   setFocusedColorKey: Dispatch<SetStateAction<FocusedColorKey>>
   onApplySwatch: (hex: string) => void
   onUploadSvg: (file: File) => Promise<void> | void
-  onExportLottie: () => void
   onExportVideo: () => void
 }
 
@@ -45,7 +44,6 @@ export function ControlsPanel({
   setFocusedColorKey,
   onApplySwatch,
   onUploadSvg,
-  onExportLottie,
   onExportVideo,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -76,12 +74,13 @@ export function ControlsPanel({
           value={state.source}
           onValueChange={(v) => update('source', v as TrailAnimState['source'])}
         >
-          <TabsList className="w-full">
-            <TabsTrigger value="upload" className="flex-1 text-xs">Upload</TabsTrigger>
-            <TabsTrigger value="lissajous" className="flex-1 text-xs">Lissajous</TabsTrigger>
-            <TabsTrigger value="scribble" className="flex-1 text-xs">Scribble</TabsTrigger>
-            <TabsTrigger value="shape" className="flex-1 text-xs">Shapes</TabsTrigger>
-            <TabsTrigger value="burst" className="flex-1 text-xs">Burst</TabsTrigger>
+          <TabsList className="grid grid-cols-3 gap-1 w-full h-auto">
+            <TabsTrigger value="upload" className="text-xs">Upload</TabsTrigger>
+            <TabsTrigger value="lissajous" className="text-xs">Lissajous</TabsTrigger>
+            <TabsTrigger value="scribble" className="text-xs">Scribble</TabsTrigger>
+            <TabsTrigger value="shape" className="text-xs">Shapes</TabsTrigger>
+            <TabsTrigger value="asterisk" className="text-xs">Asterisk</TabsTrigger>
+            <TabsTrigger value="burst" className="text-xs">Burst</TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="flex flex-col gap-2 mt-3">
@@ -342,6 +341,139 @@ export function ControlsPanel({
                 }
               />
             </Row>
+          </TabsContent>
+
+          <TabsContent value="asterisk" className="flex flex-col gap-3 mt-3">
+            <SliderRow
+              label="Rays"
+              value={state.asterisk.rays}
+              min={3}
+              max={24}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rays: v } }))}
+              format={(v) => String(v)}
+            />
+            <Row>
+              <Label htmlFor="asteriskEven">Even angles</Label>
+              <Switch
+                id="asteriskEven"
+                checked={state.asterisk.evenAngles}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, asterisk: { ...p.asterisk, evenAngles: v } }))
+                }
+              />
+            </Row>
+            <SliderRow
+              label="Ray length"
+              value={state.asterisk.armLength}
+              min={0.1}
+              max={0.95}
+              step={0.02}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, armLength: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Length variance"
+              value={state.asterisk.armVariance}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, armVariance: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Inner gap"
+              value={state.asterisk.innerGap}
+              min={0}
+              max={0.5}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, innerGap: v } }))}
+              format={(v) => (v === 0 ? 'touch center' : `${Math.round(v * 100)}%`)}
+            />
+            <SliderRow
+              label="Ray duration"
+              value={state.asterisk.rayDuration}
+              min={0.2}
+              max={2}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rayDuration: v } }))}
+              format={(v) => `${v.toFixed(2)}s`}
+            />
+            <SliderRow
+              label="Ray stagger"
+              value={state.asterisk.rayStagger}
+              min={0}
+              max={0.3}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rayStagger: v } }))}
+              format={(v) => `${v.toFixed(2)}s`}
+            />
+            <SliderRow
+              label="Trail length"
+              value={state.asterisk.trailLength}
+              min={0.1}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, trailLength: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Rotation"
+              value={state.asterisk.rotation}
+              min={0}
+              max={Math.PI * 2}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, rotation: v } }))}
+              format={(v) => `${((v / Math.PI) * 180).toFixed(0)}°`}
+            />
+            <Row>
+              <Label htmlFor="asteriskAnimateRot">Animate rotation</Label>
+              <Switch
+                id="asteriskAnimateRot"
+                checked={state.asterisk.animateRotation}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, asterisk: { ...p.asterisk, animateRotation: v } }))
+                }
+              />
+            </Row>
+            <Row>
+              <Label htmlFor="asteriskDot">Center dot</Label>
+              <Switch
+                id="asteriskDot"
+                checked={state.asterisk.centerDot}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, asterisk: { ...p.asterisk, centerDot: v } }))
+                }
+              />
+            </Row>
+            {state.asterisk.centerDot && (
+              <SliderRow
+                label="Dot radius"
+                value={state.asterisk.centerDotRadius}
+                min={1}
+                max={12}
+                step={0.5}
+                onChange={(v) => setState((p) => ({ ...p, asterisk: { ...p.asterisk, centerDotRadius: v } }))}
+                format={(v) => `${v}px`}
+              />
+            )}
+            {!state.asterisk.evenAngles && (
+              <Row>
+                <Label>Seed</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setState((p) => ({
+                      ...p,
+                      asterisk: { ...p.asterisk, seed: Math.floor(Math.random() * 10000) },
+                    }))
+                  }
+                >
+                  Reroll ({state.asterisk.seed})
+                </Button>
+              </Row>
+            )}
           </TabsContent>
 
           <TabsContent value="burst" className="flex flex-col gap-3 mt-3">
@@ -704,8 +836,7 @@ export function ControlsPanel({
       <Separator />
 
       <div className="flex flex-col gap-2">
-        <Button onClick={onExportLottie} className="w-full">Export Lottie</Button>
-        <Button onClick={onExportVideo} variant="outline" className="w-full">Export Video (MP4 or WebM)</Button>
+        <Button onClick={onExportVideo} className="w-full">Export Video (MP4 or WebM)</Button>
       </div>
     </div>
   )

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import lottie, { type AnimationItem } from 'lottie-web'
 import {
   computeLiveState,
   createDefaultState,
@@ -12,7 +11,7 @@ import {
   DEFAULT_SVG,
   type TrailAnimState,
 } from '@/lib/types'
-import { buildTrailLottie, renderScene } from '@/lib/trail-anim'
+import { renderScene } from '@/lib/trail-anim'
 import { ControlsPanel, type FocusedColorKey } from '@/components/ControlsPanel'
 
 function App() {
@@ -29,8 +28,6 @@ function App() {
   const [focusedColorKey, setFocusedColorKey] = useState<FocusedColorKey>(null)
 
   const svgRef = useRef<SVGSVGElement>(null)
-  const lottieMountRef = useRef<HTMLDivElement>(null)
-  const lottieAnimRef = useRef<AnimationItem | null>(null)
 
   const stateRef = useRef(state)
   stateRef.current = state
@@ -134,31 +131,6 @@ function App() {
     state.shape.rotation,
   ])
 
-  const handleExportLottie = useCallback(() => {
-    const s = stateRef.current
-    const json = buildTrailLottie(s)
-    if (lottieAnimRef.current) {
-      lottieAnimRef.current.destroy()
-      lottieAnimRef.current = null
-    }
-    if (lottieMountRef.current) {
-      lottieMountRef.current.innerHTML = ''
-      lottieAnimRef.current = lottie.loadAnimation({
-        container: lottieMountRef.current,
-        renderer: 'svg',
-        loop: s.loop,
-        autoplay: true,
-        animationData: json,
-      })
-    }
-    const blob = new Blob([JSON.stringify(json)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `signal-trail-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [])
 
   const handleExportVideo = useCallback(async () => {
     const s = stateRef.current
@@ -287,16 +259,6 @@ function App() {
             })()}
           </PreviewCard>
 
-          <PreviewCard label="Lottie preview (of last export)">
-            <div
-              ref={lottieMountRef}
-              style={{
-                width: state.canvasSize,
-                height: state.canvasSize,
-                background: state.bgColor,
-              }}
-            />
-          </PreviewCard>
         </section>
 
         <aside>
@@ -307,7 +269,6 @@ function App() {
             setFocusedColorKey={setFocusedColorKey}
             onApplySwatch={applyColorToFocused}
             onUploadSvg={handleUploadSvg}
-            onExportLottie={handleExportLottie}
             onExportVideo={handleExportVideo}
           />
         </aside>

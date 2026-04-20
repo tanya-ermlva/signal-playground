@@ -31,6 +31,25 @@ export interface ScribbleParams {
   animatePhase: boolean
 }
 
+// One configurable asterisk: N rays radiating from a single center. Each ray
+// gets its own staggered trim-path sweep. Like the Burst mode but focused
+// on a single shape with fine per-ray timing control.
+export interface AsteriskParams {
+  rays: number            // 3..24 — number of radiating lines
+  evenAngles: boolean     // true = evenly spaced, false = random-jittered
+  armLength: number       // 0.1..0.95 — base ray length as fraction of canvas half
+  armVariance: number     // 0..1 — how much ray lengths vary
+  innerGap: number        // 0..0.5 — inner gap (0 = rays touch centre)
+  rayDuration: number     // 0.2..2s — life of each individual ray
+  rayStagger: number      // 0..0.3s — delay between consecutive ray starts
+  trailLength: number     // 0.1..1 — trim-path window on each ray
+  rotation: number        // 0..2π — static rotation of the whole asterisk
+  animateRotation: boolean // if true, rotates over the cycle
+  centerDot: boolean
+  centerDotRadius: number // px
+  seed: number            // only matters when evenAngles is false
+}
+
 export interface BurstParams {
   count: number          // 1..16 — number of burst explosions per cycle
   rays: number           // 4..24 — lines per burst
@@ -66,11 +85,12 @@ export interface ShapeParams {
 }
 
 export interface TrailAnimState {
-  // Path source: uploaded SVG, Lissajous, Scribble, parametric Shape, or Burst.
-  source: 'upload' | 'lissajous' | 'scribble' | 'shape' | 'burst'
+  // Path source: uploaded SVG, Lissajous, Scribble, Shape, single Asterisk, or Burst of many.
+  source: 'upload' | 'lissajous' | 'scribble' | 'shape' | 'asterisk' | 'burst'
   lissajous: LissajousParams
   scribble: ScribbleParams
   shape: ShapeParams
+  asterisk: AsteriskParams
   burst: BurstParams
 
   // SVG source (populated by upload OR by Lissajous generation — same fields).
@@ -145,6 +165,21 @@ export function createDefaultState(): TrailAnimState {
       rotation: 0,
       animateRotation: true,
     },
+    asterisk: {
+      rays: 8,
+      evenAngles: true,
+      armLength: 0.8,
+      armVariance: 0.2,
+      innerGap: 0,
+      rayDuration: 0.9,
+      rayStagger: 0.08,
+      trailLength: 0.8,
+      rotation: 0,
+      animateRotation: false,
+      centerDot: false,
+      centerDotRadius: 4,
+      seed: 13,
+    },
     burst: {
       count: 6,
       rays: 10,
@@ -191,9 +226,12 @@ export function createDefaultState(): TrailAnimState {
   }
 }
 
-// One full animation period. Last trail starts at (trailCount-1)*stagger
-// and sweeps for duration seconds. After it finishes, the loop restarts.
+// One full animation period. Source-specific when the mode has its own timing.
 export function cycleDuration(state: TrailAnimState): number {
+  if (state.source === 'asterisk') {
+    const { rays, rayStagger, rayDuration } = state.asterisk
+    return Math.max(rayDuration, (rays - 1) * rayStagger + rayDuration)
+  }
   return (state.trailCount - 1) * state.stagger + state.duration
 }
 
@@ -407,19 +445,51 @@ export function generateScribblePath(
 }
 
 // Effective viewBox for rendering — pads for stroke half-width plus any blur
-// spread (Gaussian blur reaches ~3σ past its nominal edge).
-// Burst source draws directly into the canvas coordinate space, so we use
-// [0, canvasSize] rather than the stored path bbox.
+// spread (Gaussian blur reaches ~3σ past its nominal edge). For source modes
+// that draw in canvas coordinates (asterisk, burst), we compute a bbox that
+// encompasses the actual drawn extent so rays aren't clipped.
 export function effectiveViewBox(state: TrailAnimState) {
   const pad = state.strokeWidth / 2 + state.blur * 3
-  if (state.source === 'burst') {
+  const center = state.canvasSize / 2
+
+  if (state.source === 'asterisk') {
+    const rays = generateAsteriskRays(state.asterisk, state.canvasSize)
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const r of rays) {
+      const x = center + Math.cos(r.angle) * r.length
+      const y = center + Math.sin(r.angle) * r.length
+      if (x < minX) minX = x
+      if (y < minY) minY = y
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+    }
+    // Always include the center so the asterisk stays visually anchored.
+    if (center < minX) minX = center
+    if (center < minY) minY = center
+    if (center > maxX) maxX = center
+    if (center > maxY) maxY = center
     return {
-      x: -pad,
-      y: -pad,
-      w: state.canvasSize + pad * 2,
-      h: state.canvasSize + pad * 2,
+      x: minX - pad,
+      y: minY - pad,
+      w: maxX - minX + pad * 2,
+      h: maxY - minY + pad * 2,
     }
   }
+
+  if (state.source === 'burst') {
+    // Expand around canvas center by the max possible ray reach (spread + maxArm).
+    const canvasHalf = state.canvasSize / 2
+    const maxArm = state.burst.armLength * (1 + state.burst.armVariance * 0.6) * canvasHalf
+    const maxSpread = state.burst.spread * canvasHalf
+    const extent = maxSpread + maxArm + pad
+    return {
+      x: center - extent,
+      y: center - extent,
+      w: extent * 2,
+      h: extent * 2,
+    }
+  }
+
   return {
     x: state.viewBox.x - pad,
     y: state.viewBox.y - pad,
@@ -520,6 +590,29 @@ export interface BurstInstance {
   rays: Array<{ angle: number; length: number }>
 }
 
+// Generate the ray list for a single configurable Asterisk.
+export function generateAsteriskRays(
+  params: AsteriskParams,
+  canvasSize: number,
+): Array<{ angle: number; length: number }> {
+  const TAU = Math.PI * 2
+  const canvasHalf = canvasSize / 2
+  const rays: Array<{ angle: number; length: number }> = []
+  for (let j = 0; j < params.rays; j++) {
+    const baseAng = params.evenAngles
+      ? (j / params.rays) * TAU
+      : hashFloat(params.seed, j, 401) * TAU
+    const angJit = params.evenAngles
+      ? (hashFloat(params.seed, j, 402) - 0.5) * 0.08
+      : 0
+    const angle = baseAng + angJit + params.rotation
+    const lenVariance = 1 - params.armVariance + params.armVariance * hashFloat(params.seed, j, 403) * 1.6
+    const length = params.armLength * canvasHalf * lenVariance
+    rays.push({ angle, length })
+  }
+  return rays
+}
+
 export function generateBursts(params: BurstParams, canvasSize: number, cycleSec: number): BurstInstance[] {
   const TAU = Math.PI * 2
   const center = canvasSize / 2
@@ -584,6 +677,12 @@ export function computeLiveState(state: TrailAnimState, absTimeSec: number): Tra
     const dynamicPhase = state.scribble.phase + t01 * Math.PI * 2
     const { path, viewBox } = generateScribblePath({ ...state.scribble, phase: dynamicPhase })
     return { ...state, paths: [path], viewBox }
+  }
+  if (state.source === 'asterisk' && state.asterisk.animateRotation) {
+    const cycle = cycleDuration(state)
+    const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
+    const dynamicRotation = state.asterisk.rotation + t01 * Math.PI * 2
+    return { ...state, asterisk: { ...state.asterisk, rotation: dynamicRotation } }
   }
   if (state.source === 'shape' && state.shape.animateRotation) {
     const cycle = cycleDuration(state)

@@ -1,6 +1,6 @@
 import type { TrailAnimState } from './types'
 import { EASINGS, sampleEasing } from './easings'
-import { cycleDuration, effectiveViewBox, generateBursts } from './types'
+import { cycleDuration, effectiveViewBox, generateAsteriskRays, generateBursts } from './types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -248,13 +248,115 @@ export function renderBurstAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
   }
 }
 
+// =============== Asterisk renderer ===============
+// One configurable asterisk/sunburst at the canvas center. Each of N rays
+// gets its own staggered trim-path sweep — start + grow + fade, offset by
+// rayStagger between rays.
+
+export function renderAsteriskAnim(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild)
+
+  const filterId = 'trail-blur'
+  if (state.blur > 0) {
+    const defs = document.createElementNS(SVG_NS, 'defs')
+    const filter = document.createElementNS(SVG_NS, 'filter')
+    filter.setAttribute('id', filterId)
+    filter.setAttribute('x', '-50%')
+    filter.setAttribute('y', '-50%')
+    filter.setAttribute('width', '200%')
+    filter.setAttribute('height', '200%')
+    const gaussian = document.createElementNS(SVG_NS, 'feGaussianBlur')
+    gaussian.setAttribute('in', 'SourceGraphic')
+    gaussian.setAttribute('stdDeviation', String(state.blur))
+    filter.appendChild(gaussian)
+    defs.appendChild(filter)
+    svg.appendChild(defs)
+  }
+  const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
+
+  const cycle = cycleDuration(state)
+  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
+  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
+  let sceneAlpha = 1
+  if (sf > 0) {
+    if (scenePhase < sf) sceneAlpha = scenePhase / sf
+    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
+  }
+  const sceneGroup = document.createElementNS(SVG_NS, 'g')
+  sceneGroup.setAttribute('opacity', String(sceneAlpha))
+  svg.appendChild(sceneGroup)
+
+  const easeFn = EASINGS[state.easing]
+  const ap = state.asterisk
+  const rays = generateAsteriskRays(ap, state.canvasSize)
+  const cx = state.canvasSize / 2
+  const cy = state.canvasSize / 2
+  const fade = Math.max(0, Math.min(0.49, state.trailFade))
+
+  for (let j = 0; j < rays.length; j++) {
+    const ray = rays[j]
+    const startOffset = j * ap.rayStagger
+    const localT = absTimeSec - startOffset
+    if (localT < 0 || localT > ap.rayDuration) continue
+
+    const phase = localT / ap.rayDuration
+    const tip = easeFn(phase) * (1 + ap.trailLength)
+    const head = Math.min(1, tip)
+    const tail = Math.max(0, Math.min(1, tip - ap.trailLength))
+    const visibleLen = head - tail
+    if (visibleLen <= 0.001) continue
+
+    let opacity = 1
+    if (fade > 0) {
+      if (phase < fade) opacity = phase / fade
+      else if (phase > 1 - fade) opacity = (1 - phase) / fade
+    }
+    if (opacity <= 0.001) continue
+
+    const color = state.trailColors[j % state.trailColors.length]
+    const ca = Math.cos(ray.angle)
+    const sa = Math.sin(ray.angle)
+    const x1 = cx + ca * ap.innerGap * ray.length
+    const y1 = cy + sa * ap.innerGap * ray.length
+    const x2 = cx + ca * ray.length
+    const y2 = cy + sa * ray.length
+
+    const line = document.createElementNS(SVG_NS, 'path')
+    line.setAttribute(
+      'd',
+      `M ${x1.toFixed(3)} ${y1.toFixed(3)} L ${x2.toFixed(3)} ${y2.toFixed(3)}`,
+    )
+    line.setAttribute('pathLength', '1')
+    applyStrokeAttrs(line, {
+      color,
+      strokeWidth: state.strokeWidth,
+      opacity,
+      linecap: state.linecap,
+    })
+    line.setAttribute(
+      'stroke-dasharray',
+      `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
+    )
+    if (filterAttr) line.setAttribute('filter', filterAttr)
+    sceneGroup.appendChild(line)
+  }
+
+  if (ap.centerDot && ap.centerDotRadius > 0) {
+    const dot = document.createElementNS(SVG_NS, 'circle')
+    dot.setAttribute('cx', String(cx))
+    dot.setAttribute('cy', String(cy))
+    dot.setAttribute('r', String(ap.centerDotRadius))
+    dot.setAttribute('fill', state.baseColor)
+    if (filterAttr) dot.setAttribute('filter', filterAttr)
+    sceneGroup.appendChild(dot)
+  }
+}
+
 // Pick the right renderer for the current source.
 export function renderScene(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
-  if (state.source === 'burst') {
-    renderBurstAnim(svg, state, absTimeSec)
-  } else {
-    renderTrailAnim(svg, state, absTimeSec)
-  }
+  if (state.source === 'burst') renderBurstAnim(svg, state, absTimeSec)
+  else if (state.source === 'asterisk') renderAsteriskAnim(svg, state, absTimeSec)
+  else renderTrailAnim(svg, state, absTimeSec)
 }
 
 // =============== Lottie export ===============
