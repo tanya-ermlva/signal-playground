@@ -122,6 +122,12 @@ export function parseSvg(text: string): ParsedSvg | null {
   const geom = [...container.querySelectorAll(SHAPES)] as SVGGeometryElement[]
   const paths: string[] = []
 
+  // Track the true content bbox from actual sampled points. We ignore the
+  // authored viewBox when we have enough samples — uploaded SVGs often have
+  // content flush to the edges, which would clip strokes. A tight bbox gives
+  // us something to pad at render time.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
   for (const el of geom) {
     try {
       const len = el.getTotalLength?.() ?? 0
@@ -134,6 +140,10 @@ export function parseSvg(text: string): ParsedSvg | null {
         const pt = el.getPointAtLength((i / (N - 1)) * len)
         const p = ctm ? pt.matrixTransform(ctm) : pt
         segs.push(`${i === 0 ? 'M' : 'L'} ${p.x.toFixed(3)} ${p.y.toFixed(3)}`)
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x
+        if (p.y > maxY) maxY = p.y
       }
       paths.push(segs.join(' '))
     } catch {
@@ -144,5 +154,22 @@ export function parseSvg(text: string): ParsedSvg | null {
   document.body.removeChild(container)
 
   if (paths.length === 0) return null
+
+  // Prefer the tight content bbox over the authored viewBox when it's valid.
+  if (Number.isFinite(minX) && maxX > minX && maxY > minY) {
+    vb = { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+  }
   return { viewBox: vb, paths }
+}
+
+// Effective viewBox for rendering — adds half-stroke padding on every side so
+// stroked content doesn't get clipped by the viewport edge.
+export function effectiveViewBox(state: TrailAnimState) {
+  const pad = Math.max(state.baseStrokeWidth, state.trailStrokeWidth) / 2
+  return {
+    x: state.viewBox.x - pad,
+    y: state.viewBox.y - pad,
+    w: state.viewBox.w + pad * 2,
+    h: state.viewBox.h + pad * 2,
+  }
 }

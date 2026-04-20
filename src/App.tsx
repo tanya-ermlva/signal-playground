@@ -3,14 +3,25 @@ import lottie, { type AnimationItem } from 'lottie-web'
 import {
   createDefaultState,
   cycleDuration,
+  effectiveViewBox,
   parseSvg,
+  DEFAULT_SVG,
   type TrailAnimState,
 } from '@/lib/types'
 import { buildTrailLottie, renderTrailAnim } from '@/lib/trail-anim'
 import { ControlsPanel, type FocusedColorKey } from '@/components/ControlsPanel'
 
 function App() {
-  const [state, setState] = useState<TrailAnimState>(() => createDefaultState())
+  const [state, setState] = useState<TrailAnimState>(() => {
+    // Parse the default SVG so we start with a tight bbox matching what an
+    // uploaded SVG would produce. Consistent layout between built-in and uploaded.
+    const base = createDefaultState()
+    const parsed = parseSvg(DEFAULT_SVG)
+    if (parsed) {
+      return { ...base, viewBox: parsed.viewBox, paths: parsed.paths }
+    }
+    return base
+  })
   const [focusedColorKey, setFocusedColorKey] = useState<FocusedColorKey>(null)
 
   const svgRef = useRef<SVGSVGElement>(null)
@@ -83,7 +94,8 @@ function App() {
 
     const offscreenSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement
     offscreenSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-    offscreenSvg.setAttribute('viewBox', `${s.viewBox.x} ${s.viewBox.y} ${s.viewBox.w} ${s.viewBox.h}`)
+    const evb = effectiveViewBox(s)
+    offscreenSvg.setAttribute('viewBox', `${evb.x} ${evb.y} ${evb.w} ${evb.h}`)
     offscreenSvg.setAttribute('width', String(s.canvasSize))
     offscreenSvg.setAttribute('height', String(s.canvasSize))
 
@@ -179,16 +191,21 @@ function App() {
       <main className="grid grid-cols-[1fr_360px] gap-8 p-8 items-start">
         <section className="sticky top-8 flex flex-col items-center gap-6">
           <PreviewCard label="Live preview">
-            <svg
-              ref={svgRef}
-              viewBox={`${state.viewBox.x} ${state.viewBox.y} ${state.viewBox.w} ${state.viewBox.h}`}
-              preserveAspectRatio="xMidYMid meet"
-              style={{
-                width: state.canvasSize,
-                height: state.canvasSize,
-                background: state.bgColor,
-              }}
-            />
+            {(() => {
+              const vb = effectiveViewBox(state)
+              return (
+                <svg
+                  ref={svgRef}
+                  viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  style={{
+                    width: state.canvasSize,
+                    height: state.canvasSize,
+                    background: state.bgColor,
+                  }}
+                />
+              )
+            })()}
           </PreviewCard>
 
           <PreviewCard label="Lottie preview (of last export)">

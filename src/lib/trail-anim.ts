@@ -1,6 +1,6 @@
 import type { TrailAnimState } from './types'
 import { EASINGS, sampleEasing } from './easings'
-import { cycleDuration } from './types'
+import { cycleDuration, effectiveViewBox } from './types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -342,7 +342,6 @@ export function buildTrailLottie(state: TrailAnimState) {
   const {
     canvasSize,
     paths,
-    viewBox,
     showBase,
     baseColor,
     baseStrokeWidth,
@@ -359,11 +358,12 @@ export function buildTrailLottie(state: TrailAnimState) {
   const cycleSec = cycleDuration(state)
   const totalFrames = Math.max(1, Math.round(cycleSec * fps))
 
-  // The comp is canvasSize x canvasSize. We scale the source viewBox to fit
-  // inside the canvas while preserving aspect ratio.
-  const scale = Math.min(canvasSize / viewBox.w, canvasSize / viewBox.h)
-  const offsetX = (canvasSize - viewBox.w * scale) / 2 - viewBox.x * scale
-  const offsetY = (canvasSize - viewBox.h * scale) / 2 - viewBox.y * scale
+  // Scale + center using the padded effective viewBox so strokes have room
+  // to render without clipping (matches the live SVG preview exactly).
+  const evb = effectiveViewBox(state)
+  const scale = Math.min(canvasSize / evb.w, canvasSize / evb.h)
+  const offsetX = (canvasSize - evb.w * scale) / 2 - evb.x * scale
+  const offsetY = (canvasSize - evb.h * scale) / 2 - evb.y * scale
 
   // Sample each path once; reuse the vertices across base + trail layers.
   const pathVerts = paths.map((d) => {
