@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import lottie, { type AnimationItem } from 'lottie-web'
 import {
+  computeLiveState,
   createDefaultState,
   cycleDuration,
   effectiveViewBox,
+  generateLissajousPath,
   parseSvg,
   DEFAULT_SVG,
   type TrailAnimState,
@@ -39,7 +41,8 @@ function App() {
       const elapsed = (now - start) / 1000
       const cycle = cycleDuration(s)
       const t = s.loop ? elapsed % cycle : Math.min(elapsed, cycle)
-      if (svgRef.current) renderTrailAnim(svgRef.current, s, t)
+      const live = computeLiveState(s, t)
+      if (svgRef.current) renderTrailAnim(svgRef.current, live, t)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -55,11 +58,33 @@ function App() {
     }
     setState((prev) => ({
       ...prev,
+      source: 'upload',
       svgFileName: file.name,
       viewBox: parsed.viewBox,
       paths: parsed.paths,
     }))
   }, [])
+
+  // Regenerate the Lissajous path whenever its static params change, or when
+  // the source flips to 'lissajous'. This covers the "not animating" case;
+  // when animatePhase is on, computeLiveState overrides paths per-frame.
+  useEffect(() => {
+    if (state.source !== 'lissajous') return
+    const { path, viewBox } = generateLissajousPath(state.lissajous)
+    setState((prev) => ({
+      ...prev,
+      svgFileName: `Lissajous ${prev.lissajous.freqX}:${prev.lissajous.freqY}`,
+      viewBox,
+      paths: [path],
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.source,
+    state.lissajous.freqX,
+    state.lissajous.freqY,
+    state.lissajous.phase,
+    state.lissajous.amplitude,
+  ])
 
   const handleExportLottie = useCallback(() => {
     const s = stateRef.current
@@ -137,7 +162,13 @@ function App() {
 
     for (let f = 0; f < frames; f++) {
       const t = (f / frames) * cycle
-      renderTrailAnim(offscreenSvg, s, t)
+      const live = computeLiveState(s, t)
+      // Update the offscreen SVG's viewBox each frame in case the Lissajous
+      // animation shifts it (phase rotation keeps the bbox stable, but this
+      // is future-proof for freq morph or other dynamic changes).
+      const evbLive = effectiveViewBox(live)
+      offscreenSvg.setAttribute('viewBox', `${evbLive.x} ${evbLive.y} ${evbLive.w} ${evbLive.h}`)
+      renderTrailAnim(offscreenSvg, live, t)
       const xml = new XMLSerializer().serializeToString(offscreenSvg)
       const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
       const url = URL.createObjectURL(svgBlob)

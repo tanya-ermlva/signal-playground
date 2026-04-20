@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export type FocusedColorKey =
   | { kind: 'trail'; index: number }
@@ -70,23 +71,87 @@ export function ControlsPanel({
 
   return (
     <div className="flex flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <Section title="SVG source">
-        <div className="flex flex-col gap-2">
-          <div className="text-xs text-neutral-500 truncate">{state.svgFileName}</div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".svg,image/svg+xml"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-          <Button variant="outline" onClick={() => fileRef.current?.click()} className="w-full">
-            Upload SVG…
-          </Button>
-          <div className="text-[10px] text-neutral-400">
-            {state.paths.length} path{state.paths.length === 1 ? '' : 's'} · viewBox {state.viewBox.w} × {state.viewBox.h}
-          </div>
-        </div>
+      <Section title="Source">
+        <Tabs
+          value={state.source}
+          onValueChange={(v) => update('source', v as TrailAnimState['source'])}
+        >
+          <TabsList className="w-full">
+            <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
+            <TabsTrigger value="lissajous" className="flex-1">Lissajous</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="upload" className="flex flex-col gap-2 mt-3">
+            <div className="text-xs text-neutral-500 truncate">{state.svgFileName}</div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".svg,image/svg+xml"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button variant="outline" onClick={() => fileRef.current?.click()} className="w-full">
+              Upload SVG…
+            </Button>
+            <div className="text-[10px] text-neutral-400">
+              {state.paths.length} path{state.paths.length === 1 ? '' : 's'} · viewBox {Math.round(state.viewBox.w)} × {Math.round(state.viewBox.h)}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="lissajous" className="flex flex-col gap-3 mt-3">
+            <SliderRow
+              label="Freq X"
+              value={state.lissajous.freqX}
+              min={1}
+              max={8}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, freqX: v } }))}
+              format={(v) => String(v)}
+            />
+            <SliderRow
+              label="Freq Y"
+              value={state.lissajous.freqY}
+              min={1}
+              max={8}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, freqY: v } }))}
+              format={(v) => String(v)}
+            />
+            <SliderRow
+              label="Phase"
+              value={state.lissajous.phase}
+              min={0}
+              max={Math.PI}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, phase: v } }))}
+              format={(v) => `${((v / Math.PI) * 180).toFixed(0)}°`}
+            />
+            <SliderRow
+              label="Amplitude"
+              value={state.lissajous.amplitude}
+              min={0.3}
+              max={0.95}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, amplitude: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <Row>
+              <Label htmlFor="animatePhase">Animate phase</Label>
+              <Switch
+                id="animatePhase"
+                checked={state.lissajous.animatePhase}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, lissajous: { ...p.lissajous, animatePhase: v } }))
+                }
+              />
+            </Row>
+            <div className="text-[10px] text-neutral-400">
+              {state.lissajous.animatePhase
+                ? `phase sweeps 0→360° over ${state.stagger * (state.trailCount - 1) + state.duration}s`
+                : 'static shape — toggle animate to morph continuously'}
+            </div>
+          </TabsContent>
+        </Tabs>
       </Section>
 
       <Separator />

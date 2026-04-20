@@ -5,11 +5,23 @@ const DEFAULT_PATH =
 
 export const DEFAULT_SVG = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><path d="${DEFAULT_PATH}"/></svg>`
 
+export interface LissajousParams {
+  freqX: number        // 1..8 integer — x-axis oscillation count
+  freqY: number        // 1..8 integer — y-axis oscillation count
+  phase: number        // 0..π — static phase offset δ (starting value when animating)
+  amplitude: number    // 0.3..0.95 — size as fraction of canvas
+  animatePhase: boolean // when true, phase sweeps 0→2π over cycleDuration
+}
+
 export interface TrailAnimState {
-  // SVG source
+  // Path source: either an uploaded SVG or a generated Lissajous curve.
+  source: 'upload' | 'lissajous'
+  lissajous: LissajousParams
+
+  // SVG source (populated by upload OR by Lissajous generation — same fields).
   svgFileName: string        // for display
   viewBox: { x: number; y: number; w: number; h: number }
-  paths: string[]            // extracted 'd' attributes from all <path> elements
+  paths: string[]            // polyline 'd' strings (flattened from any source)
 
   // Canvas
   canvasSize: number
@@ -47,6 +59,14 @@ export interface TrailAnimState {
 
 export function createDefaultState(): TrailAnimState {
   return {
+    source: 'upload',
+    lissajous: {
+      freqX: 3,
+      freqY: 2,
+      phase: Math.PI / 4,
+      amplitude: 0.85,
+      animatePhase: true,
+    },
     svgFileName: 'sample squiggle',
     viewBox: { x: 0, y: 0, w: 256, h: 256 },
     paths: [DEFAULT_PATH],
@@ -174,6 +194,30 @@ export function parseSvg(text: string): ParsedSvg | null {
   return { viewBox: vb, paths }
 }
 
+// Generate a Lissajous curve as a polyline 'd' string plus its tight viewBox.
+// Same output shape as parseSvg — feeds into the render pipeline identically.
+export function generateLissajousPath(
+  params: LissajousParams,
+  size = 256,
+  samples = 400,
+): { path: string; viewBox: { x: number; y: number; w: number; h: number } } {
+  const TAU = Math.PI * 2
+  const cx = size / 2
+  const cy = size / 2
+  const r = params.amplitude * (size / 2)
+  const segs: string[] = []
+  for (let i = 0; i < samples; i++) {
+    const u = (i / (samples - 1)) * TAU
+    const x = cx + r * Math.sin(params.freqX * u + params.phase)
+    const y = cy + r * Math.sin(params.freqY * u)
+    segs.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(3)} ${y.toFixed(3)}`)
+  }
+  return {
+    path: segs.join(' '),
+    viewBox: { x: cx - r, y: cy - r, w: r * 2, h: r * 2 },
+  }
+}
+
 // Effective viewBox for rendering — pads for stroke half-width plus any blur
 // spread (Gaussian blur reaches ~3σ past its nominal edge).
 export function effectiveViewBox(state: TrailAnimState) {
@@ -184,4 +228,18 @@ export function effectiveViewBox(state: TrailAnimState) {
     w: state.viewBox.w + pad * 2,
     h: state.viewBox.h + pad * 2,
   }
+}
+
+// Compute the effective path(s) + viewBox for the current frame. When the
+// source is a Lissajous curve with animatePhase on, the phase advances a full
+// 2π over the cycle, morphing the shape continuously. Otherwise returns state
+// unchanged (uploaded SVG or static Lissajous).
+export function computeLiveState(state: TrailAnimState, absTimeSec: number): TrailAnimState {
+  if (state.source !== 'lissajous') return state
+  if (!state.lissajous.animatePhase) return state
+  const cycle = cycleDuration(state)
+  const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
+  const dynamicPhase = state.lissajous.phase + t01 * Math.PI * 2
+  const { path, viewBox } = generateLissajousPath({ ...state.lissajous, phase: dynamicPhase })
+  return { ...state, paths: [path], viewBox }
 }
