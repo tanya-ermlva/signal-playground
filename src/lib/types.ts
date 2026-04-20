@@ -17,6 +17,10 @@ export interface TrailAnimState {
 
   // Stroke width shared by base and all trails (keeps them visually consistent).
   strokeWidth: number
+  // Line cap for both base and trails. 'round' fills stroked-shape tips but
+  // creates visible dots mid-path; 'butt' is clean mid-path but leaves the
+  // base's rounded tips uncovered at path endpoints.
+  linecap: 'round' | 'butt' | 'square'
   // Gaussian blur applied to base + trails (pixels, stdDeviation).
   blur: number
 
@@ -49,6 +53,7 @@ export function createDefaultState(): TrailAnimState {
     canvasSize: 256,
     bgColor: '#FFFFFF',
     strokeWidth: 8,
+    linecap: 'round',
     blur: 0,
     showBase: true,
     baseColor: '#1E1E1E',

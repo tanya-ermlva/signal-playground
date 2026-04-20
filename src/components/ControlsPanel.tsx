@@ -141,6 +141,20 @@ export function ControlsPanel({
           onChange={(v) => update('strokeWidth', v)}
           format={(v) => `${v}px`}
         />
+        <Row>
+          <Label>Line cap</Label>
+          <Select
+            value={state.linecap}
+            onValueChange={(v) => update('linecap', v as TrailAnimState['linecap'])}
+          >
+            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="round">Round</SelectItem>
+              <SelectItem value="butt">Butt</SelectItem>
+              <SelectItem value="square">Square</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
         <SliderRow
           label="Blur"
           value={state.blur}

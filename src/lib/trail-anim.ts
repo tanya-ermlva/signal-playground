@@ -48,7 +48,7 @@ function trailPositions(
 
 function applyStrokeAttrs(
   p: SVGPathElement,
-  opts: { color: string; strokeWidth: number; opacity: number; linecap: 'round' | 'butt' },
+  opts: { color: string; strokeWidth: number; opacity: number; linecap: 'round' | 'butt' | 'square' },
 ) {
   p.setAttribute('fill', 'none')
   p.setAttribute('stroke', opts.color)
@@ -103,7 +103,7 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         color: state.baseColor,
         strokeWidth: state.strokeWidth,
         opacity: state.baseOpacity,
-        linecap: 'round',
+        linecap: state.linecap,
       })
       if (filterAttr) p.setAttribute('filter', filterAttr)
       sceneGroup.appendChild(p)
@@ -125,13 +125,11 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       const trail = document.createElementNS(SVG_NS, 'path')
       trail.setAttribute('d', d)
       trail.setAttribute('pathLength', '1')
-      // butt caps: no rounded "dots" at mid-path cuts. The base path below
-      // keeps its round caps so actual path endpoints still look finished.
       applyStrokeAttrs(trail, {
         color,
         strokeWidth: state.strokeWidth,
         opacity,
-        linecap: 'butt',
+        linecap: state.linecap,
       })
       trail.setAttribute(
         'stroke-dasharray',
