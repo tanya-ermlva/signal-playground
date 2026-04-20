@@ -31,11 +31,31 @@ export interface ScribbleParams {
   animatePhase: boolean
 }
 
+// Parametric "object" shapes — all expressed as continuous closed curves in
+// the same r = f(t), t ∈ [0, 2π] family as Lissajous.
+export type ShapeKind =
+  | 'circle'
+  | 'infinity'
+  | 'heart'
+  | 'rose'
+  | 'star'
+  | 'butterfly'
+  | 'spiral'
+
+export interface ShapeParams {
+  kind: ShapeKind
+  amplitude: number       // 0.3..0.95
+  petals: number          // 3..10 — used by rose and star
+  rotation: number        // 0..2π — static rotation
+  animateRotation: boolean
+}
+
 export interface TrailAnimState {
-  // Path source: uploaded SVG, generated Lissajous curve, or generated Scribble.
-  source: 'upload' | 'lissajous' | 'scribble'
+  // Path source: uploaded SVG, Lissajous, Scribble, or a parametric Shape.
+  source: 'upload' | 'lissajous' | 'scribble' | 'shape'
   lissajous: LissajousParams
   scribble: ScribbleParams
+  shape: ShapeParams
 
   // SVG source (populated by upload OR by Lissajous generation — same fields).
   svgFileName: string        // for display
@@ -101,6 +121,13 @@ export function createDefaultState(): TrailAnimState {
       jitter: 2,
       seed: 42,
       animatePhase: true,
+    },
+    shape: {
+      kind: 'heart',
+      amplitude: 0.7,
+      petals: 5,
+      rotation: 0,
+      animateRotation: true,
     },
     svgFileName: 'sample squiggle',
     viewBox: { x: 0, y: 0, w: 256, h: 256 },
@@ -361,6 +388,89 @@ export function effectiveViewBox(state: TrailAnimState) {
   }
 }
 
+// Parametric object shapes. Each function maps t ∈ [0, 2π] → a unit-sized
+// (x, y) in roughly [-1, 1]². Callers scale + translate to the final canvas.
+function shapeAt(kind: ShapeKind, t: number, petals: number): [number, number] {
+  switch (kind) {
+    case 'circle':
+      return [Math.cos(t), Math.sin(t)]
+
+    case 'infinity': {
+      // Lemniscate of Bernoulli, normalised to fit in [-1, 1].
+      const denom = 1 + Math.sin(t) * Math.sin(t)
+      return [Math.cos(t) / denom, (Math.sin(t) * Math.cos(t)) / denom]
+    }
+
+    case 'heart': {
+      // Classic heart curve, normalised. y is negated so the heart points up.
+      const s = Math.sin(t)
+      const xRaw = 16 * s * s * s
+      const yRaw = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)
+      return [xRaw / 17, -yRaw / 17]
+    }
+
+    case 'rose': {
+      // r = cos(k·t). For integer k: k petals if k odd, 2k petals if k even.
+      const rr = Math.cos(petals * t)
+      return [rr * Math.cos(t), rr * Math.sin(t)]
+    }
+
+    case 'star': {
+      // Soft star — amplitude pulses at petals×t producing rounded points.
+      const rr = 0.6 + 0.4 * Math.cos(petals * t)
+      return [rr * Math.cos(t), rr * Math.sin(t)]
+    }
+
+    case 'butterfly': {
+      // Temple H. Fay's butterfly curve, normalised.
+      const m =
+        Math.exp(Math.cos(t)) -
+        2 * Math.cos(4 * t) -
+        Math.pow(Math.sin(t / 12), 5)
+      return [(Math.sin(t) * m) / 5, -(Math.cos(t) * m) / 5]
+    }
+
+    case 'spiral': {
+      // Looping double-spiral that closes at 2π (out then back).
+      const u = t / (Math.PI * 2) // 0..1
+      const radial = u < 0.5 ? u * 2 : (1 - u) * 2
+      return [radial * Math.cos(petals * t), radial * Math.sin(petals * t)]
+    }
+  }
+}
+
+export function generateShapePath(
+  params: ShapeParams,
+  size = 256,
+  samples = 500,
+): { path: string; viewBox: { x: number; y: number; w: number; h: number } } {
+  const TAU = Math.PI * 2
+  const cx = size / 2
+  const cy = size / 2
+  const r = params.amplitude * (size / 2)
+  const cosR = Math.cos(params.rotation)
+  const sinR = Math.sin(params.rotation)
+
+  const segs: string[] = []
+  const bbox = [Infinity, Infinity, -Infinity, -Infinity]
+
+  for (let i = 0; i < samples; i++) {
+    const t = (i / (samples - 1)) * TAU
+    const [ux, uy] = shapeAt(params.kind, t, params.petals)
+    const rx = ux * cosR - uy * sinR
+    const ry = ux * sinR + uy * cosR
+    const x = cx + r * rx
+    const y = cy + r * ry
+    segs.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(3)} ${y.toFixed(3)}`)
+    ingest({ x, y }, bbox)
+  }
+
+  return {
+    path: segs.join(' '),
+    viewBox: { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] },
+  }
+}
+
 // Compute the effective path(s) + viewBox for the current frame.
 // - Uploaded SVG: unchanged.
 // - Lissajous + animatePhase: phase sweeps 0→2π over cycle; optional freq drift
@@ -389,6 +499,13 @@ export function computeLiveState(state: TrailAnimState, absTimeSec: number): Tra
     const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
     const dynamicPhase = state.scribble.phase + t01 * Math.PI * 2
     const { path, viewBox } = generateScribblePath({ ...state.scribble, phase: dynamicPhase })
+    return { ...state, paths: [path], viewBox }
+  }
+  if (state.source === 'shape' && state.shape.animateRotation) {
+    const cycle = cycleDuration(state)
+    const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
+    const dynamicRotation = state.shape.rotation + t01 * Math.PI * 2
+    const { path, viewBox } = generateShapePath({ ...state.shape, rotation: dynamicRotation })
     return { ...state, paths: [path], viewBox }
   }
   return state

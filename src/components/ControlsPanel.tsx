@@ -77,9 +77,10 @@ export function ControlsPanel({
           onValueChange={(v) => update('source', v as TrailAnimState['source'])}
         >
           <TabsList className="w-full">
-            <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
-            <TabsTrigger value="lissajous" className="flex-1">Lissajous</TabsTrigger>
-            <TabsTrigger value="scribble" className="flex-1">Scribble</TabsTrigger>
+            <TabsTrigger value="upload" className="flex-1 text-xs">Upload</TabsTrigger>
+            <TabsTrigger value="lissajous" className="flex-1 text-xs">Lissajous</TabsTrigger>
+            <TabsTrigger value="scribble" className="flex-1 text-xs">Scribble</TabsTrigger>
+            <TabsTrigger value="shape" className="flex-1 text-xs">Shapes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="flex flex-col gap-2 mt-3">
@@ -272,6 +273,71 @@ export function ControlsPanel({
                 checked={state.scribble.animatePhase}
                 onCheckedChange={(v) =>
                   setState((p) => ({ ...p, scribble: { ...p.scribble, animatePhase: v } }))
+                }
+              />
+            </Row>
+          </TabsContent>
+
+          <TabsContent value="shape" className="flex flex-col gap-3 mt-3">
+            <Row>
+              <Label>Shape</Label>
+              <Select
+                value={state.shape.kind}
+                onValueChange={(v) =>
+                  setState((p) => ({
+                    ...p,
+                    shape: { ...p.shape, kind: v as typeof p.shape.kind },
+                  }))
+                }
+              >
+                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="circle">Circle</SelectItem>
+                  <SelectItem value="infinity">Infinity</SelectItem>
+                  <SelectItem value="heart">Heart</SelectItem>
+                  <SelectItem value="rose">Rose (flower)</SelectItem>
+                  <SelectItem value="star">Star</SelectItem>
+                  <SelectItem value="butterfly">Butterfly</SelectItem>
+                  <SelectItem value="spiral">Spiral</SelectItem>
+                </SelectContent>
+              </Select>
+            </Row>
+            <SliderRow
+              label="Amplitude"
+              value={state.shape.amplitude}
+              min={0.3}
+              max={0.95}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, shape: { ...p.shape, amplitude: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            {(state.shape.kind === 'rose' || state.shape.kind === 'star' || state.shape.kind === 'spiral') && (
+              <SliderRow
+                label={state.shape.kind === 'spiral' ? 'Windings' : 'Petals / points'}
+                value={state.shape.petals}
+                min={2}
+                max={10}
+                step={1}
+                onChange={(v) => setState((p) => ({ ...p, shape: { ...p.shape, petals: v } }))}
+                format={(v) => String(v)}
+              />
+            )}
+            <SliderRow
+              label="Rotation"
+              value={state.shape.rotation}
+              min={0}
+              max={Math.PI * 2}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, shape: { ...p.shape, rotation: v } }))}
+              format={(v) => `${((v / Math.PI) * 180).toFixed(0)}°`}
+            />
+            <Row>
+              <Label htmlFor="shapeAnimate">Animate rotation</Label>
+              <Switch
+                id="shapeAnimate"
+                checked={state.shape.animateRotation}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, shape: { ...p.shape, animateRotation: v } }))
                 }
               />
             </Row>

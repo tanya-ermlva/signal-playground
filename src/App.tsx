@@ -7,6 +7,7 @@ import {
   effectiveViewBox,
   generateLissajousPath,
   generateScribblePath,
+  generateShapePath,
   parseSvg,
   DEFAULT_SVG,
   type TrailAnimState,
@@ -112,6 +113,25 @@ function App() {
     state.scribble.chaos,
     state.scribble.jitter,
     state.scribble.seed,
+  ])
+
+  // Regenerate the Shape path when static params change.
+  useEffect(() => {
+    if (state.source !== 'shape') return
+    const { path, viewBox } = generateShapePath(state.shape)
+    setState((prev) => ({
+      ...prev,
+      svgFileName: `Shape: ${prev.shape.kind}`,
+      viewBox,
+      paths: [path],
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.source,
+    state.shape.kind,
+    state.shape.amplitude,
+    state.shape.petals,
+    state.shape.rotation,
   ])
 
   const handleExportLottie = useCallback(() => {
