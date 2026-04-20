@@ -1,6 +1,6 @@
 import type { TrailAnimState } from './types'
 import { EASINGS, sampleEasing } from './easings'
-import { cycleDuration, effectiveViewBox } from './types'
+import { cycleDuration, effectiveViewBox, generateBursts } from './types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -138,6 +138,122 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       if (filterAttr) trail.setAttribute('filter', filterAttr)
       sceneGroup.appendChild(trail)
     }
+  }
+}
+
+// =============== Burst renderer ===============
+// Dedicated render path for the "burst" source. Each burst is a cluster of
+// lines radiating from a point, and each line gets its own trim-path sweep
+// over the burst's lifetime. Bursts are staggered evenly across the cycle.
+
+export function renderBurstAnim(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild)
+
+  // Blur filter (reused from trail render; same attribute shape).
+  const filterId = 'trail-blur'
+  if (state.blur > 0) {
+    const defs = document.createElementNS(SVG_NS, 'defs')
+    const filter = document.createElementNS(SVG_NS, 'filter')
+    filter.setAttribute('id', filterId)
+    filter.setAttribute('x', '-50%')
+    filter.setAttribute('y', '-50%')
+    filter.setAttribute('width', '200%')
+    filter.setAttribute('height', '200%')
+    const gaussian = document.createElementNS(SVG_NS, 'feGaussianBlur')
+    gaussian.setAttribute('in', 'SourceGraphic')
+    gaussian.setAttribute('stdDeviation', String(state.blur))
+    filter.appendChild(gaussian)
+    defs.appendChild(filter)
+    svg.appendChild(defs)
+  }
+  const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
+
+  // Scene fade group wraps everything so the whole set dips at cycle edges.
+  const cycle = cycleDuration(state)
+  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
+  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
+  let sceneAlpha = 1
+  if (sf > 0) {
+    if (scenePhase < sf) sceneAlpha = scenePhase / sf
+    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
+  }
+  const sceneGroup = document.createElementNS(SVG_NS, 'g')
+  sceneGroup.setAttribute('opacity', String(sceneAlpha))
+  svg.appendChild(sceneGroup)
+
+  const easeFn = EASINGS[state.easing]
+  const bp = state.burst
+  const bursts = generateBursts(bp, state.canvasSize, cycle)
+  const fade = Math.max(0, Math.min(0.49, state.trailFade))
+
+  for (let bi = 0; bi < bursts.length; bi++) {
+    const burst = bursts[bi]
+    const localT = absTimeSec - burst.startOffset
+    if (localT < 0 || localT > bp.burstDuration) continue
+
+    const phase = localT / bp.burstDuration
+    const tip = easeFn(phase) * (1 + bp.trailLength)
+    const head = Math.min(1, tip)
+    const tail = Math.max(0, Math.min(1, tip - bp.trailLength))
+    const visibleLen = head - tail
+    if (visibleLen <= 0.001) continue
+
+    // Fade-in at start, fade-out at end (per-burst).
+    let opacity = 1
+    if (fade > 0) {
+      if (phase < fade) opacity = phase / fade
+      else if (phase > 1 - fade) opacity = (1 - phase) / fade
+    }
+    if (opacity <= 0.001) continue
+
+    const color = state.trailColors[bi % state.trailColors.length]
+
+    for (const ray of burst.rays) {
+      const ca = Math.cos(ray.angle)
+      const sa = Math.sin(ray.angle)
+      const x1 = burst.cx + ca * bp.innerGap * ray.length
+      const y1 = burst.cy + sa * bp.innerGap * ray.length
+      const x2 = burst.cx + ca * ray.length
+      const y2 = burst.cy + sa * ray.length
+      const line = document.createElementNS(SVG_NS, 'path')
+      line.setAttribute(
+        'd',
+        `M ${x1.toFixed(3)} ${y1.toFixed(3)} L ${x2.toFixed(3)} ${y2.toFixed(3)}`,
+      )
+      line.setAttribute('pathLength', '1')
+      applyStrokeAttrs(line, {
+        color,
+        strokeWidth: state.strokeWidth,
+        opacity,
+        linecap: state.linecap,
+      })
+      line.setAttribute(
+        'stroke-dasharray',
+        `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
+      )
+      if (filterAttr) line.setAttribute('filter', filterAttr)
+      sceneGroup.appendChild(line)
+    }
+
+    if (bp.centerDot && bp.centerDotRadius > 0) {
+      const dot = document.createElementNS(SVG_NS, 'circle')
+      dot.setAttribute('cx', String(burst.cx))
+      dot.setAttribute('cy', String(burst.cy))
+      dot.setAttribute('r', String(bp.centerDotRadius))
+      dot.setAttribute('fill', color)
+      dot.setAttribute('opacity', String(opacity))
+      if (filterAttr) dot.setAttribute('filter', filterAttr)
+      sceneGroup.appendChild(dot)
+    }
+  }
+}
+
+// Pick the right renderer for the current source.
+export function renderScene(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
+  if (state.source === 'burst') {
+    renderBurstAnim(svg, state, absTimeSec)
+  } else {
+    renderTrailAnim(svg, state, absTimeSec)
   }
 }
 

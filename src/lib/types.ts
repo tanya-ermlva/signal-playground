@@ -31,6 +31,21 @@ export interface ScribbleParams {
   animatePhase: boolean
 }
 
+export interface BurstParams {
+  count: number          // 1..16 — number of burst explosions per cycle
+  rays: number           // 4..24 — lines per burst
+  evenAngles: boolean    // true = evenly spaced (asterisk/sunburst); false = random (firework)
+  armLength: number      // 0.1..0.9 — base ray length as fraction of canvas half
+  armVariance: number    // 0..1 — how much ray lengths vary (0 = equal, 1 = wild)
+  innerGap: number       // 0..0.5 — inner gap as fraction of ray length (0 = touches center)
+  spread: number         // 0..1 — how far from canvas center bursts can be placed
+  burstDuration: number  // 0.2..2 seconds — each burst's lifecycle
+  trailLength: number    // 0.1..1 — trim-path window on each ray
+  centerDot: boolean     // draw small filled dot at each burst's center
+  centerDotRadius: number // px
+  seed: number
+}
+
 // Parametric "object" shapes — all expressed as continuous closed curves in
 // the same r = f(t), t ∈ [0, 2π] family as Lissajous.
 export type ShapeKind =
@@ -51,11 +66,12 @@ export interface ShapeParams {
 }
 
 export interface TrailAnimState {
-  // Path source: uploaded SVG, Lissajous, Scribble, or a parametric Shape.
-  source: 'upload' | 'lissajous' | 'scribble' | 'shape'
+  // Path source: uploaded SVG, Lissajous, Scribble, parametric Shape, or Burst.
+  source: 'upload' | 'lissajous' | 'scribble' | 'shape' | 'burst'
   lissajous: LissajousParams
   scribble: ScribbleParams
   shape: ShapeParams
+  burst: BurstParams
 
   // SVG source (populated by upload OR by Lissajous generation — same fields).
   svgFileName: string        // for display
@@ -128,6 +144,20 @@ export function createDefaultState(): TrailAnimState {
       petals: 5,
       rotation: 0,
       animateRotation: true,
+    },
+    burst: {
+      count: 6,
+      rays: 10,
+      evenAngles: false,
+      armLength: 0.5,
+      armVariance: 0.5,
+      innerGap: 0.1,
+      spread: 0.5,
+      burstDuration: 0.9,
+      trailLength: 0.8,
+      centerDot: false,
+      centerDotRadius: 3,
+      seed: 7,
     },
     svgFileName: 'sample squiggle',
     viewBox: { x: 0, y: 0, w: 256, h: 256 },
@@ -378,8 +408,18 @@ export function generateScribblePath(
 
 // Effective viewBox for rendering — pads for stroke half-width plus any blur
 // spread (Gaussian blur reaches ~3σ past its nominal edge).
+// Burst source draws directly into the canvas coordinate space, so we use
+// [0, canvasSize] rather than the stored path bbox.
 export function effectiveViewBox(state: TrailAnimState) {
   const pad = state.strokeWidth / 2 + state.blur * 3
+  if (state.source === 'burst') {
+    return {
+      x: -pad,
+      y: -pad,
+      w: state.canvasSize + pad * 2,
+      h: state.canvasSize + pad * 2,
+    }
+  }
   return {
     x: state.viewBox.x - pad,
     y: state.viewBox.y - pad,
@@ -469,6 +509,50 @@ export function generateShapePath(
     path: segs.join(' '),
     viewBox: { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] },
   }
+}
+
+// A single burst placement — a center point and N rays specified by angle + length.
+// Generated deterministically from BurstParams + seed so it's stable across frames.
+export interface BurstInstance {
+  cx: number
+  cy: number
+  startOffset: number  // seconds from cycle start
+  rays: Array<{ angle: number; length: number }>
+}
+
+export function generateBursts(params: BurstParams, canvasSize: number, cycleSec: number): BurstInstance[] {
+  const TAU = Math.PI * 2
+  const center = canvasSize / 2
+  const canvasHalf = canvasSize / 2
+  const out: BurstInstance[] = []
+  for (let i = 0; i < params.count; i++) {
+    // Burst position: within a disc of radius spread*canvasHalf around centre.
+    const posAng = hashFloat(params.seed, i, 101) * TAU
+    const posR = Math.sqrt(hashFloat(params.seed, i, 102)) * params.spread * canvasHalf
+    const cx = center + posR * Math.cos(posAng)
+    const cy = center + posR * Math.sin(posAng)
+
+    const rays: Array<{ angle: number; length: number }> = []
+    for (let j = 0; j < params.rays; j++) {
+      const baseAng = params.evenAngles
+        ? (j / params.rays) * TAU
+        : hashFloat(params.seed, i * 1000 + j, 103) * TAU
+      // Add a small angle jitter even when evenAngles is true, for organic feel.
+      const angJit = params.evenAngles
+        ? (hashFloat(params.seed, i * 1000 + j, 104) - 0.5) * 0.08
+        : 0
+      const angle = baseAng + angJit
+      const lenVariance = 1 - params.armVariance + params.armVariance * hashFloat(params.seed, i * 1000 + j, 105) * 1.6
+      const length = params.armLength * canvasHalf * lenVariance
+      rays.push({ angle, length })
+    }
+
+    // Spread start times evenly across the cycle so bursts feel like an
+    // ongoing firework show rather than all going off at once.
+    const startOffset = (i / params.count) * cycleSec
+    out.push({ cx, cy, startOffset, rays })
+  }
+  return out
 }
 
 // Compute the effective path(s) + viewBox for the current frame.

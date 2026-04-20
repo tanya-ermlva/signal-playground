@@ -12,7 +12,7 @@ import {
   DEFAULT_SVG,
   type TrailAnimState,
 } from '@/lib/types'
-import { buildTrailLottie, renderTrailAnim } from '@/lib/trail-anim'
+import { buildTrailLottie, renderScene } from '@/lib/trail-anim'
 import { ControlsPanel, type FocusedColorKey } from '@/components/ControlsPanel'
 
 function App() {
@@ -44,7 +44,7 @@ function App() {
       const cycle = cycleDuration(s)
       const t = s.loop ? elapsed % cycle : Math.min(elapsed, cycle)
       const live = computeLiveState(s, t)
-      if (svgRef.current) renderTrailAnim(svgRef.current, live, t)
+      if (svgRef.current) renderScene(svgRef.current, live, t)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -216,7 +216,7 @@ function App() {
       // is future-proof for freq morph or other dynamic changes).
       const evbLive = effectiveViewBox(live)
       offscreenSvg.setAttribute('viewBox', `${evbLive.x} ${evbLive.y} ${evbLive.w} ${evbLive.h}`)
-      renderTrailAnim(offscreenSvg, live, t)
+      renderScene(offscreenSvg, live, t)
       const xml = new XMLSerializer().serializeToString(offscreenSvg)
       const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' })
       const url = URL.createObjectURL(svgBlob)

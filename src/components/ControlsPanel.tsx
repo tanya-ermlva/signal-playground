@@ -81,6 +81,7 @@ export function ControlsPanel({
             <TabsTrigger value="lissajous" className="flex-1 text-xs">Lissajous</TabsTrigger>
             <TabsTrigger value="scribble" className="flex-1 text-xs">Scribble</TabsTrigger>
             <TabsTrigger value="shape" className="flex-1 text-xs">Shapes</TabsTrigger>
+            <TabsTrigger value="burst" className="flex-1 text-xs">Burst</TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="flex flex-col gap-2 mt-3">
@@ -340,6 +341,127 @@ export function ControlsPanel({
                   setState((p) => ({ ...p, shape: { ...p.shape, animateRotation: v } }))
                 }
               />
+            </Row>
+          </TabsContent>
+
+          <TabsContent value="burst" className="flex flex-col gap-3 mt-3">
+            <SliderRow
+              label="Burst count"
+              value={state.burst.count}
+              min={1}
+              max={16}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, count: v } }))}
+              format={(v) => String(v)}
+            />
+            <SliderRow
+              label="Rays per burst"
+              value={state.burst.rays}
+              min={3}
+              max={24}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, rays: v } }))}
+              format={(v) => String(v)}
+            />
+            <Row>
+              <Label htmlFor="burstEven">Even angles</Label>
+              <Switch
+                id="burstEven"
+                checked={state.burst.evenAngles}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, burst: { ...p.burst, evenAngles: v } }))
+                }
+              />
+            </Row>
+            <SliderRow
+              label="Ray length"
+              value={state.burst.armLength}
+              min={0.1}
+              max={0.9}
+              step={0.02}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, armLength: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Length variance"
+              value={state.burst.armVariance}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, armVariance: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Inner gap"
+              value={state.burst.innerGap}
+              min={0}
+              max={0.5}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, innerGap: v } }))}
+              format={(v) => (v === 0 ? 'touch center' : `${Math.round(v * 100)}%`)}
+            />
+            <SliderRow
+              label="Spread"
+              value={state.burst.spread}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, spread: v } }))}
+              format={(v) => (v === 0 ? 'centered' : `${Math.round(v * 100)}%`)}
+            />
+            <SliderRow
+              label="Burst duration"
+              value={state.burst.burstDuration}
+              min={0.2}
+              max={2}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, burstDuration: v } }))}
+              format={(v) => `${v.toFixed(2)}s`}
+            />
+            <SliderRow
+              label="Trail length"
+              value={state.burst.trailLength}
+              min={0.1}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, trailLength: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <Row>
+              <Label htmlFor="burstDot">Center dot</Label>
+              <Switch
+                id="burstDot"
+                checked={state.burst.centerDot}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, burst: { ...p.burst, centerDot: v } }))
+                }
+              />
+            </Row>
+            {state.burst.centerDot && (
+              <SliderRow
+                label="Dot radius"
+                value={state.burst.centerDotRadius}
+                min={1}
+                max={12}
+                step={0.5}
+                onChange={(v) => setState((p) => ({ ...p, burst: { ...p.burst, centerDotRadius: v } }))}
+                format={(v) => `${v}px`}
+              />
+            )}
+            <Row>
+              <Label>Seed</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setState((p) => ({
+                    ...p,
+                    burst: { ...p.burst, seed: Math.floor(Math.random() * 10000) },
+                  }))
+                }
+              >
+                Reroll ({state.burst.seed})
+              </Button>
             </Row>
           </TabsContent>
         </Tabs>
