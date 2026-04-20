@@ -6,6 +6,7 @@ import {
   cycleDuration,
   effectiveViewBox,
   generateLissajousPath,
+  generateScribblePath,
   parseSvg,
   DEFAULT_SVG,
   type TrailAnimState,
@@ -66,8 +67,8 @@ function App() {
   }, [])
 
   // Regenerate the Lissajous path whenever its static params change, or when
-  // the source flips to 'lissajous'. This covers the "not animating" case;
-  // when animatePhase is on, computeLiveState overrides paths per-frame.
+  // the source flips to 'lissajous'. When animatePhase is on, computeLiveState
+  // overrides paths per-frame with dynamic phase + drift.
   useEffect(() => {
     if (state.source !== 'lissajous') return
     const { path, viewBox } = generateLissajousPath(state.lissajous)
@@ -84,6 +85,33 @@ function App() {
     state.lissajous.freqY,
     state.lissajous.phase,
     state.lissajous.amplitude,
+    state.lissajous.decay,
+    state.lissajous.harmonic,
+    state.lissajous.harmonicMul,
+    state.lissajous.jitter,
+  ])
+
+  // Regenerate the Scribble path when its params change (or on source switch).
+  useEffect(() => {
+    if (state.source !== 'scribble') return
+    const { path, viewBox } = generateScribblePath(state.scribble)
+    setState((prev) => ({
+      ...prev,
+      svgFileName: `Scribble (seed ${prev.scribble.seed})`,
+      viewBox,
+      paths: [path],
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.source,
+    state.scribble.freqX,
+    state.scribble.freqY,
+    state.scribble.phase,
+    state.scribble.amplitude,
+    state.scribble.complexity,
+    state.scribble.chaos,
+    state.scribble.jitter,
+    state.scribble.seed,
   ])
 
   const handleExportLottie = useCallback(() => {

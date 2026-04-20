@@ -79,6 +79,7 @@ export function ControlsPanel({
           <TabsList className="w-full">
             <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
             <TabsTrigger value="lissajous" className="flex-1">Lissajous</TabsTrigger>
+            <TabsTrigger value="scribble" className="flex-1">Scribble</TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload" className="flex flex-col gap-2 mt-3">
@@ -145,11 +146,135 @@ export function ControlsPanel({
                 }
               />
             </Row>
-            <div className="text-[10px] text-neutral-400">
-              {state.lissajous.animatePhase
-                ? `phase sweeps 0→360° over ${state.stagger * (state.trailCount - 1) + state.duration}s`
-                : 'static shape — toggle animate to morph continuously'}
-            </div>
+
+            <div className="text-[10px] uppercase tracking-wide text-neutral-500 pt-2">Humanize</div>
+            <SliderRow
+              label="Decay (spiral)"
+              value={state.lissajous.decay}
+              min={0}
+              max={1.5}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, decay: v } }))}
+              format={(v) => (v === 0 ? 'off' : v.toFixed(2))}
+            />
+            <SliderRow
+              label="Harmonic strength"
+              value={state.lissajous.harmonic}
+              min={0}
+              max={0.4}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, harmonic: v } }))}
+              format={(v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`)}
+            />
+            <SliderRow
+              label="Harmonic ×"
+              value={state.lissajous.harmonicMul}
+              min={2}
+              max={6}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, harmonicMul: v } }))}
+              format={(v) => `${v}×`}
+            />
+            <SliderRow
+              label="Jitter"
+              value={state.lissajous.jitter}
+              min={0}
+              max={5}
+              step={0.1}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, jitter: v } }))}
+              format={(v) => (v === 0 ? 'off' : `${v.toFixed(1)}px`)}
+            />
+            <SliderRow
+              label="Freq drift"
+              value={state.lissajous.drift}
+              min={0}
+              max={1.5}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, lissajous: { ...p.lissajous, drift: v } }))}
+              format={(v) => (v === 0 ? 'off' : v.toFixed(2))}
+            />
+          </TabsContent>
+
+          <TabsContent value="scribble" className="flex flex-col gap-3 mt-3">
+            <SliderRow
+              label="Freq X"
+              value={state.scribble.freqX}
+              min={1}
+              max={8}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, freqX: v } }))}
+              format={(v) => String(v)}
+            />
+            <SliderRow
+              label="Freq Y"
+              value={state.scribble.freqY}
+              min={1}
+              max={8}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, freqY: v } }))}
+              format={(v) => String(v)}
+            />
+            <SliderRow
+              label="Amplitude"
+              value={state.scribble.amplitude}
+              min={0.3}
+              max={0.95}
+              step={0.01}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, amplitude: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Complexity"
+              value={state.scribble.complexity}
+              min={1}
+              max={6}
+              step={1}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, complexity: v } }))}
+              format={(v) => `${v} harmonic${v === 1 ? '' : 's'}`}
+            />
+            <SliderRow
+              label="Chaos"
+              value={state.scribble.chaos}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, chaos: v } }))}
+              format={(v) => `${Math.round(v * 100)}%`}
+            />
+            <SliderRow
+              label="Jitter"
+              value={state.scribble.jitter}
+              min={0}
+              max={8}
+              step={0.1}
+              onChange={(v) => setState((p) => ({ ...p, scribble: { ...p.scribble, jitter: v } }))}
+              format={(v) => (v === 0 ? 'off' : `${v.toFixed(1)}px`)}
+            />
+            <Row>
+              <Label>Seed</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setState((p) => ({
+                    ...p,
+                    scribble: { ...p.scribble, seed: Math.floor(Math.random() * 10000) },
+                  }))
+                }
+              >
+                Reroll ({state.scribble.seed})
+              </Button>
+            </Row>
+            <Row>
+              <Label htmlFor="scribbleAnimate">Animate phase</Label>
+              <Switch
+                id="scribbleAnimate"
+                checked={state.scribble.animatePhase}
+                onCheckedChange={(v) =>
+                  setState((p) => ({ ...p, scribble: { ...p.scribble, animatePhase: v } }))
+                }
+              />
+            </Row>
           </TabsContent>
         </Tabs>
       </Section>

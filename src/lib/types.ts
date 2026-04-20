@@ -11,12 +11,31 @@ export interface LissajousParams {
   phase: number        // 0..π — static phase offset δ (starting value when animating)
   amplitude: number    // 0.3..0.95 — size as fraction of canvas
   animatePhase: boolean // when true, phase sweeps 0→2π over cycleDuration
+  // Harmonograph extensions: make the curve feel less mathematically rigid.
+  decay: number        // 0..1.5 — exponential amplitude decay over one cycle (0 = off, 1 = noticeable spiral)
+  harmonic: number     // 0..0.4 — strength of a secondary oscillation mixed in, as a fraction of base amplitude
+  harmonicMul: number  // 2..6 integer — frequency multiplier for the harmonic relative to the base freqs
+  jitter: number       // 0..5 pixels — deterministic per-point displacement (hand-drawn feel)
+  drift: number        // 0..1.5 — sinusoidal freq drift over the cycle (live-animation humanization)
+}
+
+export interface ScribbleParams {
+  freqX: number          // 1..8 integer — base X frequency
+  freqY: number          // 1..8 integer — base Y frequency
+  phase: number          // 0..π — static phase of the base
+  amplitude: number      // 0.3..0.95
+  complexity: number     // 2..6 integer — number of extra randomised oscillators
+  chaos: number          // 0..1 — how randomised the extra oscillators' freqs/phases are
+  jitter: number         // 0..8 pixels — deterministic per-point noise
+  seed: number           // integer — reroll button to get a different scribble
+  animatePhase: boolean
 }
 
 export interface TrailAnimState {
-  // Path source: either an uploaded SVG or a generated Lissajous curve.
-  source: 'upload' | 'lissajous'
+  // Path source: uploaded SVG, generated Lissajous curve, or generated Scribble.
+  source: 'upload' | 'lissajous' | 'scribble'
   lissajous: LissajousParams
+  scribble: ScribbleParams
 
   // SVG source (populated by upload OR by Lissajous generation — same fields).
   svgFileName: string        // for display
@@ -65,6 +84,22 @@ export function createDefaultState(): TrailAnimState {
       freqY: 2,
       phase: Math.PI / 4,
       amplitude: 0.85,
+      animatePhase: true,
+      decay: 0,
+      harmonic: 0,
+      harmonicMul: 3,
+      jitter: 0,
+      drift: 0,
+    },
+    scribble: {
+      freqX: 2,
+      freqY: 3,
+      phase: Math.PI / 4,
+      amplitude: 0.8,
+      complexity: 3,
+      chaos: 0.6,
+      jitter: 2,
+      seed: 42,
       animatePhase: true,
     },
     svgFileName: 'sample squiggle',
@@ -194,8 +229,25 @@ export function parseSvg(text: string): ParsedSvg | null {
   return { viewBox: vb, paths }
 }
 
+// Deterministic pseudo-random in [0, 1) from an integer seed + index. Used for
+// jitter and scribble harmonics so the curve is stable across frames.
+function hashFloat(seed: number, i: number, salt = 0): number {
+  const s = Math.sin((seed + i) * 12.9898 + salt * 78.233) * 43758.5453
+  return s - Math.floor(s)
+}
+
+// Track the bbox of sampled points so the viewBox always snugly fits the drawn curve.
+function ingest(pt: { x: number; y: number }, bbox: number[]) {
+  if (pt.x < bbox[0]) bbox[0] = pt.x
+  if (pt.y < bbox[1]) bbox[1] = pt.y
+  if (pt.x > bbox[2]) bbox[2] = pt.x
+  if (pt.y > bbox[3]) bbox[3] = pt.y
+}
+
 // Generate a Lissajous curve as a polyline 'd' string plus its tight viewBox.
-// Same output shape as parseSvg — feeds into the render pipeline identically.
+// Harmonograph extensions: decay makes the amplitude spiral down over the
+// cycle, harmonic+harmonicMul mix in a secondary oscillation, jitter adds a
+// deterministic per-point displacement.
 export function generateLissajousPath(
   params: LissajousParams,
   size = 256,
@@ -206,15 +258,94 @@ export function generateLissajousPath(
   const cy = size / 2
   const r = params.amplitude * (size / 2)
   const segs: string[] = []
+  const bbox = [Infinity, Infinity, -Infinity, -Infinity]
+  const harm = params.harmonic ?? 0
+  const hmul = params.harmonicMul ?? 3
+  const decay = params.decay ?? 0
+  const jitter = params.jitter ?? 0
+  const norm = 1 / (1 + harm) // keep total amplitude normalised so curve fits
+
   for (let i = 0; i < samples; i++) {
     const u = (i / (samples - 1)) * TAU
-    const x = cx + r * Math.sin(params.freqX * u + params.phase)
-    const y = cy + r * Math.sin(params.freqY * u)
+    const decayFactor = decay > 0 ? Math.exp(-decay * u / TAU) : 1
+
+    const xBase = Math.sin(params.freqX * u + params.phase)
+    const yBase = Math.sin(params.freqY * u)
+    const xHarm = harm * Math.sin(params.freqX * hmul * u + params.phase * 1.3)
+    const yHarm = harm * Math.sin(params.freqY * hmul * u)
+
+    let x = cx + r * decayFactor * norm * (xBase + xHarm)
+    let y = cy + r * decayFactor * norm * (yBase + yHarm)
+
+    if (jitter > 0) {
+      x += (hashFloat(0, i, 1) - 0.5) * 2 * jitter
+      y += (hashFloat(0, i, 2) - 0.5) * 2 * jitter
+    }
+
     segs.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(3)} ${y.toFixed(3)}`)
+    ingest({ x, y }, bbox)
   }
   return {
     path: segs.join(' '),
-    viewBox: { x: cx - r, y: cy - r, w: r * 2, h: r * 2 },
+    viewBox: { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] },
+  }
+}
+
+// Scribble: base Lissajous + N randomised-frequency harmonics summed in. The
+// randomness is driven by `seed` so each value of seed produces a different
+// stable scribble; same seed always looks the same. Deterministic across frames.
+export function generateScribblePath(
+  params: ScribbleParams,
+  size = 256,
+  samples = 500,
+): { path: string; viewBox: { x: number; y: number; w: number; h: number } } {
+  const TAU = Math.PI * 2
+  const cx = size / 2
+  const cy = size / 2
+  const r = params.amplitude * (size / 2)
+
+  // Pre-compute the extra oscillators. Each has its own freq multipliers and
+  // phase offsets drawn deterministically from the seed.
+  const harms: Array<{ fx: number; fy: number; px: number; py: number; amp: number }> = []
+  for (let n = 1; n <= params.complexity; n++) {
+    const chaos = params.chaos
+    const fx = 1 + n + (hashFloat(params.seed, n, 11) - 0.5) * chaos * 6
+    const fy = 1 + n + (hashFloat(params.seed, n, 22) - 0.5) * chaos * 6
+    const px = hashFloat(params.seed, n, 33) * TAU
+    const py = hashFloat(params.seed, n, 44) * TAU
+    const amp = 1 / (n + 1)
+    harms.push({ fx, fy, px, py, amp })
+  }
+  const totalAmp = 1 + harms.reduce((s, h) => s + h.amp, 0)
+  const norm = 1 / totalAmp
+
+  const segs: string[] = []
+  const bbox = [Infinity, Infinity, -Infinity, -Infinity]
+
+  for (let i = 0; i < samples; i++) {
+    const u = (i / (samples - 1)) * TAU
+
+    let sx = Math.sin(params.freqX * u + params.phase)
+    let sy = Math.sin(params.freqY * u)
+    for (const h of harms) {
+      sx += h.amp * Math.sin(params.freqX * h.fx * u + h.px + params.phase)
+      sy += h.amp * Math.sin(params.freqY * h.fy * u + h.py)
+    }
+
+    let x = cx + r * norm * sx
+    let y = cy + r * norm * sy
+
+    if (params.jitter > 0) {
+      x += (hashFloat(params.seed, i, 55) - 0.5) * 2 * params.jitter
+      y += (hashFloat(params.seed, i, 66) - 0.5) * 2 * params.jitter
+    }
+
+    segs.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(3)} ${y.toFixed(3)}`)
+    ingest({ x, y }, bbox)
+  }
+  return {
+    path: segs.join(' '),
+    viewBox: { x: bbox[0], y: bbox[1], w: bbox[2] - bbox[0], h: bbox[3] - bbox[1] },
   }
 }
 
@@ -230,16 +361,35 @@ export function effectiveViewBox(state: TrailAnimState) {
   }
 }
 
-// Compute the effective path(s) + viewBox for the current frame. When the
-// source is a Lissajous curve with animatePhase on, the phase advances a full
-// 2π over the cycle, morphing the shape continuously. Otherwise returns state
-// unchanged (uploaded SVG or static Lissajous).
+// Compute the effective path(s) + viewBox for the current frame.
+// - Uploaded SVG: unchanged.
+// - Lissajous + animatePhase: phase sweeps 0→2π over cycle; optional freq drift
+//   adds a small sinusoidal offset to freqX/freqY out-of-phase (returns to
+//   starting values at cycle boundary so loop is seamless).
+// - Scribble + animatePhase: phase sweeps 0→2π similarly.
 export function computeLiveState(state: TrailAnimState, absTimeSec: number): TrailAnimState {
-  if (state.source !== 'lissajous') return state
-  if (!state.lissajous.animatePhase) return state
-  const cycle = cycleDuration(state)
-  const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
-  const dynamicPhase = state.lissajous.phase + t01 * Math.PI * 2
-  const { path, viewBox } = generateLissajousPath({ ...state.lissajous, phase: dynamicPhase })
-  return { ...state, paths: [path], viewBox }
+  if (state.source === 'lissajous' && state.lissajous.animatePhase) {
+    const cycle = cycleDuration(state)
+    const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
+    const TAU = Math.PI * 2
+    const dynamicPhase = state.lissajous.phase + t01 * TAU
+    const drift = state.lissajous.drift ?? 0
+    const dynFreqX = state.lissajous.freqX + drift * Math.sin(TAU * t01)
+    const dynFreqY = state.lissajous.freqY + drift * Math.cos(TAU * t01)
+    const { path, viewBox } = generateLissajousPath({
+      ...state.lissajous,
+      phase: dynamicPhase,
+      freqX: dynFreqX,
+      freqY: dynFreqY,
+    })
+    return { ...state, paths: [path], viewBox }
+  }
+  if (state.source === 'scribble' && state.scribble.animatePhase) {
+    const cycle = cycleDuration(state)
+    const t01 = cycle > 0 ? (absTimeSec / cycle) % 1 : 0
+    const dynamicPhase = state.scribble.phase + t01 * Math.PI * 2
+    const { path, viewBox } = generateScribblePath({ ...state.scribble, phase: dynamicPhase })
+    return { ...state, paths: [path], viewBox }
+  }
+  return state
 }
