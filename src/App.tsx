@@ -93,15 +93,27 @@ function App() {
     const ctx = canvas.getContext('2d')!
 
     const stream = canvas.captureStream(s.fps)
-    const mimeCandidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    // Prefer MP4/H.264 when the browser supports it (Chrome, Edge, Safari).
+    // Fall back to WebM on Firefox and older browsers. The file extension
+    // follows whatever MediaRecorder actually produced.
+    const mimeCandidates = [
+      'video/mp4;codecs=avc1.42E01E',
+      'video/mp4;codecs=avc1',
+      'video/mp4;codecs=h264',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ]
     const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || ''
+    const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm'
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const chunks: Blob[] = []
     recorder.ondataavailable = (e) => {
       if (e.data.size) chunks.push(e.data)
     }
     const done = new Promise<Blob>((resolve) => {
-      recorder.onstop = () => resolve(new Blob(chunks, { type: mime || 'video/webm' }))
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mime || `video/${ext}` }))
     })
     recorder.start()
 
@@ -135,7 +147,7 @@ function App() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `signal-trail-${Date.now()}.webm`
+    a.download = `signal-trail-${Date.now()}.${ext}`
     a.click()
     URL.revokeObjectURL(url)
   }, [])

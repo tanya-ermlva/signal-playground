@@ -295,7 +295,7 @@ export function ControlsPanel({
 
       <div className="flex flex-col gap-2">
         <Button onClick={onExportLottie} className="w-full">Export Lottie</Button>
-        <Button onClick={onExportVideo} variant="outline" className="w-full">Export Video (WebM)</Button>
+        <Button onClick={onExportVideo} variant="outline" className="w-full">Export Video (MP4 or WebM)</Button>
       </div>
     </div>
   )
