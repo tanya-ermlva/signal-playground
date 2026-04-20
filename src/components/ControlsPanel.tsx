@@ -124,6 +124,15 @@ export function ControlsPanel({
           format={(v) => `${Math.round(v * 100)}%`}
         />
         <SliderRow
+          label="Scene fade in/out"
+          value={state.sceneFade}
+          min={0}
+          max={0.45}
+          step={0.01}
+          onChange={(v) => update('sceneFade', v)}
+          format={(v) => `${Math.round(v * 100)}%`}
+        />
+        <SliderRow
           label="Stroke width"
           value={state.strokeWidth}
           min={1}

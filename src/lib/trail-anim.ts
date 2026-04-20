@@ -80,6 +80,20 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
   }
   const filterAttr = state.blur > 0 ? `url(#${filterId})` : null
 
+  // Scene-level fade: ramps the whole group 0→1 at the start of the cycle and
+  // 1→0 at the end. Wrapping everything in one <g opacity="…"> applies it once.
+  const cycle = cycleDuration(state)
+  const scenePhase = cycle > 0 ? absTimeSec / cycle : 0
+  const sf = Math.max(0, Math.min(0.49, state.sceneFade))
+  let sceneAlpha = 1
+  if (sf > 0) {
+    if (scenePhase < sf) sceneAlpha = scenePhase / sf
+    else if (scenePhase > 1 - sf) sceneAlpha = (1 - scenePhase) / sf
+  }
+  const sceneGroup = document.createElementNS(SVG_NS, 'g')
+  sceneGroup.setAttribute('opacity', String(sceneAlpha))
+  svg.appendChild(sceneGroup)
+
   // Base guide paths (static) — rendered first so trails draw on top.
   if (state.showBase) {
     for (const d of state.paths) {
@@ -92,7 +106,7 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         linecap: 'round',
       })
       if (filterAttr) p.setAttribute('filter', filterAttr)
-      svg.appendChild(p)
+      sceneGroup.appendChild(p)
     }
   }
 
@@ -124,7 +138,7 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
         `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
       )
       if (filterAttr) trail.setAttribute('filter', filterAttr)
-      svg.appendChild(trail)
+      sceneGroup.appendChild(trail)
     }
   }
 }

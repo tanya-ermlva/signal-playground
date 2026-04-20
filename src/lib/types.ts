@@ -30,6 +30,7 @@ export interface TrailAnimState {
   trailColors: string[]      // length 6
   trailLength: number        // 0.05..0.6 — fraction of path length
   trailFade: number          // 0..0.4 — fraction of each trail's life used for fade in/out
+  sceneFade: number          // 0..0.4 — fraction of cycleDuration used to fade the whole scene
   stagger: number            // 0..1 — seconds between trail starts
   duration: number           // seconds for a single trail to sweep 0→1
   easing: EasingName
@@ -63,6 +64,7 @@ export function createDefaultState(): TrailAnimState {
     ],
     trailLength: 0.35,
     trailFade: 0.15,
+    sceneFade: 0.1,
     stagger: 0.35,
     duration: 1.8,
     easing: 'easeInOutCubic',
