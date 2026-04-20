@@ -107,6 +107,10 @@ function App() {
     ]
     const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || ''
     const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm'
+    // MP4/H.264 has no alpha channel — force-fill the background even if the
+    // user toggled transparentBg on. WebM (VP9) can carry alpha, so respect
+    // the toggle there.
+    const keepTransparent = s.transparentBg && ext !== 'mp4'
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const chunks: Blob[] = []
     recorder.ondataavailable = (e) => {
@@ -131,7 +135,7 @@ function App() {
         img.onerror = rej
         img.src = url
       })
-      if (s.transparentBg) {
+      if (keepTransparent) {
         ctx.clearRect(0, 0, s.canvasSize, s.canvasSize)
       } else {
         ctx.fillStyle = s.bgColor
