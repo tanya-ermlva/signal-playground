@@ -24,19 +24,16 @@ function trailPositions(
   const easeFn = EASINGS[state.easing]
   const start = i * state.stagger
   const localT = absTimeSec - start
-  if (localT < 0) {
+  if (localT < 0 || localT > state.duration) {
     return { head: 0, tail: 0, active: false }
   }
-  // After the trail finishes sweeping, park it at the end of the path
-  // ([1 - trailLength, 1]) until the cycle loops. That way the viewer
-  // actually sees the trail "arrive" rather than a single-frame flash.
-  if (localT >= state.duration) {
-    return { head: 1, tail: Math.max(0, 1 - state.trailLength), active: true }
-  }
-  const p = localT / state.duration
-  const eased = easeFn(p)
-  const head = Math.min(1, eased)
-  const tail = Math.max(0, eased - state.trailLength)
+  // The trail's "tip" travels from 0 to (1 + trailLength) across the duration.
+  // Head saturates at 1 once the tip reaches the end; tail keeps climbing
+  // until it too hits 1, at which point the trail has fully exited.
+  const phase = localT / state.duration
+  const tip = easeFn(phase) * (1 + state.trailLength)
+  const head = Math.min(1, tip)
+  const tail = Math.max(0, Math.min(1, tip - state.trailLength))
   return { head, tail, active: true }
 }
 
@@ -204,19 +201,20 @@ function makeTrailLayer(args: {
   eKeyframes.push({ t: 0, s: [0], h: 1 })
 
   for (let k = 0; k <= SAMPLES; k++) {
-    const tNorm = k / SAMPLES          // [0, 1]
-    const progress = eased[k]          // eased progress along the path (0..1)
-    const head = Math.min(1, progress) * 100
-    const tail = Math.max(0, progress - trailLength) * 100
+    const tNorm = k / SAMPLES
+    // Tip travels 0 → (1 + trailLength) so the whole segment sweeps through
+    // and off the end. Head saturates at 100% while tail catches up.
+    const tip = eased[k] * (1 + trailLength)
+    const head = Math.min(1, tip) * 100
+    const tail = Math.max(0, Math.min(1, tip - trailLength)) * 100
     const frame = startFrame + tNorm * (endFrame - startFrame)
     sKeyframes.push({ t: frame, s: [tail] })
     eKeyframes.push({ t: frame, s: [head] })
   }
 
-  // Hold at final window position past endFrame — the trail "parks" at the
-  // end of the path, matching the live preview's post-animation rest state.
-  const parkedTail = Math.max(0, 1 - trailLength) * 100
-  sKeyframes.push({ t: endFrame, s: [parkedTail], h: 1 })
+  // After endFrame the trail has fully exited — both anchors at 100, invisible
+  // until the comp loops.
+  sKeyframes.push({ t: endFrame, s: [100], h: 1 })
   eKeyframes.push({ t: endFrame, s: [100], h: 1 })
 
   return {

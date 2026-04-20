@@ -78,29 +78,70 @@ export interface ParsedSvg {
   paths: string[]
 }
 
-// Parse raw SVG text. Returns the viewBox and flattened array of path 'd' attributes
-// from ALL <path> elements. Ignores other shapes (rect, circle, etc.) for now —
-// trim-path only makes sense on stroked paths.
+// Parse raw SVG text and flatten every drawable element (path, rect, circle,
+// ellipse, line, polyline, polygon) into polyline `d` strings — applying each
+// element's effective transform matrix so nested <g transform="…"> ancestors
+// (the way Figma/Illustrator export) don't misplace the animation.
+//
+// Strategy: inject the SVG into a hidden DOM container so the browser builds
+// the render tree, then for each geometry element use getTotalLength +
+// getPointAtLength to walk the drawn shape, transforming each point through
+// the element's CTM.
 export function parseSvg(text: string): ParsedSvg | null {
-  const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
-  const svgEl = doc.querySelector('svg')
-  if (!svgEl) return null
+  const container = document.createElement('div')
+  container.style.position = 'absolute'
+  container.style.visibility = 'hidden'
+  container.style.left = '-99999px'
+  container.style.top = '0'
+  container.style.width = '0'
+  container.style.height = '0'
+  container.innerHTML = text
+  document.body.appendChild(container)
 
-  // Viewbox fallback to width/height if missing
+  const svgEl = container.querySelector('svg')
+  if (!svgEl) {
+    document.body.removeChild(container)
+    return null
+  }
+
+  // viewBox — try the attribute first, fall back to width/height, then 256×256.
   let vb = { x: 0, y: 0, w: 256, h: 256 }
   const vbAttr = svgEl.getAttribute('viewBox')
   if (vbAttr) {
-    const [x, y, w, h] = vbAttr.split(/\s+|,/).map(Number)
-    if ([x, y, w, h].every(Number.isFinite) && w > 0 && h > 0) vb = { x, y, w, h }
+    const parts = vbAttr.trim().split(/\s+|,/).map(Number)
+    if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
+      vb = { x: parts[0], y: parts[1], w: parts[2], h: parts[3] }
+    }
   } else {
     const w = parseFloat(svgEl.getAttribute('width') || '256')
     const h = parseFloat(svgEl.getAttribute('height') || '256')
     if (w > 0 && h > 0) vb = { x: 0, y: 0, w, h }
   }
 
-  const paths = [...doc.querySelectorAll('path')]
-    .map((p) => p.getAttribute('d') || '')
-    .filter(Boolean)
+  const SHAPES = 'path, rect, circle, ellipse, line, polyline, polygon'
+  const geom = [...container.querySelectorAll(SHAPES)] as SVGGeometryElement[]
+  const paths: string[] = []
+
+  for (const el of geom) {
+    try {
+      const len = el.getTotalLength?.() ?? 0
+      if (!Number.isFinite(len) || len <= 0) continue
+      // Sample density scaled to path length (min 50, max 400 points).
+      const N = Math.max(50, Math.min(400, Math.floor(len / 2)))
+      const ctm = el.getCTM() // effective transform from ancestors + own
+      const segs: string[] = []
+      for (let i = 0; i < N; i++) {
+        const pt = el.getPointAtLength((i / (N - 1)) * len)
+        const p = ctm ? pt.matrixTransform(ctm) : pt
+        segs.push(`${i === 0 ? 'M' : 'L'} ${p.x.toFixed(3)} ${p.y.toFixed(3)}`)
+      }
+      paths.push(segs.join(' '))
+    } catch {
+      /* skip shapes we can't sample */
+    }
+  }
+
+  document.body.removeChild(container)
 
   if (paths.length === 0) return null
   return { viewBox: vb, paths }
