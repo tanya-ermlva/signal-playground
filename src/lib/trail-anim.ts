@@ -24,8 +24,14 @@ function trailPositions(
   const easeFn = EASINGS[state.easing]
   const start = i * state.stagger
   const localT = absTimeSec - start
-  if (localT < 0 || localT > state.duration) {
+  if (localT < 0) {
     return { head: 0, tail: 0, active: false }
+  }
+  // After the trail finishes sweeping, park it at the end of the path
+  // ([1 - trailLength, 1]) until the cycle loops. That way the viewer
+  // actually sees the trail "arrive" rather than a single-frame flash.
+  if (localT >= state.duration) {
+    return { head: 1, tail: Math.max(0, 1 - state.trailLength), active: true }
   }
   const p = localT / state.duration
   const eased = easeFn(p)
@@ -34,13 +40,16 @@ function trailPositions(
   return { head, tail, active: true }
 }
 
-function applyBaseAttrs(p: SVGPathElement, color: string, strokeWidth: number, opacity: number) {
+function applyStrokeAttrs(
+  p: SVGPathElement,
+  opts: { color: string; strokeWidth: number; opacity: number; linecap: 'round' | 'butt' },
+) {
   p.setAttribute('fill', 'none')
-  p.setAttribute('stroke', color)
-  p.setAttribute('stroke-width', String(strokeWidth))
-  p.setAttribute('stroke-linecap', 'round')
+  p.setAttribute('stroke', opts.color)
+  p.setAttribute('stroke-width', String(opts.strokeWidth))
+  p.setAttribute('stroke-linecap', opts.linecap)
   p.setAttribute('stroke-linejoin', 'round')
-  p.setAttribute('opacity', String(opacity))
+  p.setAttribute('opacity', String(opts.opacity))
 }
 
 export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTimeSec: number) {
@@ -51,7 +60,12 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
     for (const d of state.paths) {
       const p = document.createElementNS(SVG_NS, 'path')
       p.setAttribute('d', d)
-      applyBaseAttrs(p, state.baseColor, state.baseStrokeWidth, state.baseOpacity)
+      applyStrokeAttrs(p, {
+        color: state.baseColor,
+        strokeWidth: state.baseStrokeWidth,
+        opacity: state.baseOpacity,
+        linecap: 'round',
+      })
       svg.appendChild(p)
     }
   }
@@ -70,10 +84,14 @@ export function renderTrailAnim(svg: SVGSVGElement, state: TrailAnimState, absTi
       const trail = document.createElementNS(SVG_NS, 'path')
       trail.setAttribute('d', d)
       trail.setAttribute('pathLength', '1')
-      applyBaseAttrs(trail, color, state.trailStrokeWidth, 1)
-      // dasharray parts: [invisible before tail] [visible segment] [invisible after head]
-      // tail then gap then (head-tail) then gap to end
-      // Format: 0 tail (head-tail) (1 - head)
+      // butt caps: no rounded "dots" at mid-path cuts. The base path below
+      // keeps its round caps so actual path endpoints still look finished.
+      applyStrokeAttrs(trail, {
+        color,
+        strokeWidth: state.trailStrokeWidth,
+        opacity: 1,
+        linecap: 'butt',
+      })
       trail.setAttribute(
         'stroke-dasharray',
         `0 ${tail.toFixed(4)} ${visibleLen.toFixed(4)} ${(1 - head).toFixed(4)}`,
@@ -195,8 +213,10 @@ function makeTrailLayer(args: {
     eKeyframes.push({ t: frame, s: [head] })
   }
 
-  // Hold at final values past endFrame (invisible).
-  sKeyframes.push({ t: endFrame, s: [100], h: 1 })
+  // Hold at final window position past endFrame — the trail "parks" at the
+  // end of the path, matching the live preview's post-animation rest state.
+  const parkedTail = Math.max(0, 1 - trailLength) * 100
+  sKeyframes.push({ t: endFrame, s: [parkedTail], h: 1 })
   eKeyframes.push({ t: endFrame, s: [100], h: 1 })
 
   return {
@@ -231,7 +251,7 @@ function makeTrailLayer(args: {
             c: staticVal(hexToRgbA(color)),
             o: staticVal(100),
             w: staticVal(strokeWidth),
-            lc: 2, // round cap
+            lc: 1, // butt cap — no "dots" at mid-path cuts
             lj: 2, // round join
             ml: 4,
           },
